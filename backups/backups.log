@@ -1,0 +1,44 @@
+2026-03-25 10:38:38 [ERROR]: (general) Doesn't exist: /f/.backup/programming/bash/backup.d/test/fake.file
+2026-03-25 10:38:38        : (general) Starting backup
+2026-03-25 10:38:38        : (general) Backed up: /f/.backup/programming/bash/backup.d/test/bar.txt
+2026-03-25 10:38:39        : (general) Backed up: /f/.backup/programming/bash/backup.d/test/foo_dir
+2026-03-25 10:38:39        : (general) Finished backup
+2026-03-25 10:38:39 [ERROR]: (general) Sources empty
+2026-03-25 10:38:39 [ERROR]: (general) No valid sources exist
+2026-03-25 10:50:40 [ERROR]: (test) Doesn't exist: /f/.backup/programming/bash/backup.d/test/fake.file
+2026-03-25 10:50:40        : (test) Starting backup
+2026-03-25 10:50:40        : (test) Creating destination directory: /f/.backup/programming/bash/backup.d/backups/test
+2026-03-25 10:50:40        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/bar.txt
+2026-03-25 10:50:40        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/foo_dir
+2026-03-25 10:50:40        : (test) Finished backup
+2026-03-25 10:50:41 [ERROR]: (test_broken) Sources empty
+2026-03-25 10:50:41 [ERROR]: (test_broken) No valid sources exist
+2026-03-25 10:51:42 [ERROR]: (test) Doesn't exist: /f/.backup/programming/bash/backup.d/test/fake.file
+2026-03-25 10:51:42        : (test) Starting backup
+2026-03-25 10:51:42        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/bar.txt
+2026-03-25 10:51:43        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/foo_dir
+2026-03-25 10:51:43        : (test) Finished backup
+2026-03-25 10:51:43 [ERROR]: (test_broken) Sources empty
+2026-03-25 10:51:43 [ERROR]: (test_broken) No valid sources exist
+2026-03-25 10:52:11 [ERROR]: (test) Doesn't exist: /f/.backup/programming/bash/backup.d/test/fake.file
+2026-03-25 10:52:11        : (test) Starting backup
+2026-03-25 10:52:11        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/bar.txt
+2026-03-25 10:52:11        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/foo_dir
+2026-03-25 10:52:11        : (test) Finished backup
+2026-03-25 10:52:11 [ERROR]: (test_broken) Sources empty
+2026-03-25 10:52:11 [ERROR]: (test_broken) No valid sources exist
+2026-03-25 10:54:27 [ERROR]: (test) Doesn't exist: /f/.backup/programming/bash/backup.d/test/fake.file
+2026-03-25 10:54:27        : (test) Starting backup
+2026-03-25 10:54:27        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/bar.txt
+2026-03-25 10:54:27        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/foo_dir
+2026-03-25 10:54:27        : (test) Removed extra backup: /f/.backup/programming/bash/backup.d/backups/test/2026-03-23_foo_dir.old
+2026-03-25 10:54:27        : (test) Finished backup
+2026-03-25 10:54:27 [ERROR]: (test_broken) Sources empty
+2026-03-25 10:54:27 [ERROR]: (test_broken) No valid sources exist
+2026-03-25 11:00:16 [ERROR]: (test) Doesn't exist: /f/.backup/programming/bash/backup.d/test/fake.file
+2026-03-25 11:00:16        : (test) Starting backup
+2026-03-25 11:00:16        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/bar.txt
+2026-03-25 11:00:16        : (test) Backed up: /f/.backup/programming/bash/backup.d/test/foo_dir
+2026-03-25 11:00:16        : (test) Finished backup
+2026-03-25 11:00:16 [ERROR]: (test_broken) Sources empty
+2026-03-25 11:00:17 [ERROR]: (test_broken) No valid sources exist
