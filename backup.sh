@@ -282,11 +282,11 @@ getBackups() {
 }
 
 
-# $1=job destination; $2=backup name; $3=associated job for logging
+# $1=destination; $2=backup name; $3=associated job for logging
 #
 # Requires that BACKUPS_LIMIT be set to an integer.
 cleanupBackups() {
-   local jobDestination="$1"
+   local destination="$1"
    local backupName="$2"
    local jobName="$3"
    local failsafe=0  # In case of an accidental endless loop.
@@ -303,13 +303,14 @@ cleanupBackups() {
    }
 
 
-   if [ ! -d "$jobDestination" ]; then
-      log "Job destination doesn't exist: $jobDestination" "$jobName" fail
+   if [ ! -d "$destination" ]; then
+      log "cleanupBackups(): Destination doesn't exist: $destination" \
+         "$jobName" fail
       return 1
    fi
 
    if [ -z "$backupName" ]; then
-      log "Backup name not provided" "$jobName" fail
+      log "cleanupBackups(): Backup name not provided" "$jobName" fail
       return 1
    fi
 
@@ -320,14 +321,16 @@ cleanupBackups() {
 
    while [ $failsafe -lt 5 ]; do
       (( failsafe++ ))
-      readarray -t backups< <(getBackups "$jobDestination" "$backupName" \
+      readarray -t backups< <(getBackups "$destination" "$backupName" \
          "$jobName")
-      backupsWithinLimit backups && break
+      backupsWithinLimit backups && return 0
 
       local oldestBackup="${backups[0]}"
       rm -rf "$oldestBackup"
       log "Removed extra backup: $oldestBackup" "$jobName"
    done
+
+   return 1
 }
 
 
