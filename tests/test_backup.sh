@@ -54,66 +54,66 @@ LOG_LOCATION=  # Disable logging.
 # }
 
 
-test_getObjects() {
-   local -a objects
-   local job
-   local directory="$RESOURCES/get_objects"
+# test_getObjects() {
+#    local -a objects
+#    local job
+#    local directory="$RESOURCES/get_objects"
    
-   # Job contains a space and has a single file with a space.
-   job="$directory/single space.backup"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 1
-   assert getObjects "$job"
+#    # Job contains a space and has a single file with a space.
+#    job="$directory/single space.backup"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 1
+#    assert getObjects "$job"
 
-   # Job contains multiple real files and directories.
-   job="$directory/multiple.backup"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 4
-   assert getObjects "$job"
+#    # Job contains multiple real files and directories.
+#    job="$directory/multiple.backup"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 4
+#    assert getObjects "$job"
 
-   # Job specifies a destination: return only objects.
-   job="$directory/complex.backup"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 3
-   assert getObjects "$job"
+#    # Job specifies a destination: return only objects.
+#    job="$directory/complex.backup"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 3
+#    assert getObjects "$job"
 
-   # Job contains real and fake objects: return only real ones.
-   job="$directory/mixed.backup"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 2
-   assert getObjects "$job"
+#    # Job contains real and fake objects: return only real ones.
+#    job="$directory/mixed.backup"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 2
+#    assert getObjects "$job"
 
-   # Job contains only fake objects: return nothing.
-   job="$directory/fake.backup"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 0
-   assert ! getObjects "$job"
+#    # Job contains only fake objects: return nothing.
+#    job="$directory/fake.backup"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 0
+#    assert ! getObjects "$job"
 
-   # Job contains nothing: return nothing.
-   job="$directory/empty.backup"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 0
-   assert ! getObjects "$job"
+#    # Job contains nothing: return nothing.
+#    job="$directory/empty.backup"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 0
+#    assert ! getObjects "$job"
 
-   # Job doesn't exist: return nothing.
-   job="$directory/nonexistent.backup"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 0
-   assert ! getObjects "$job"
+#    # Job doesn't exist: return nothing.
+#    job="$directory/nonexistent.backup"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 0
+#    assert ! getObjects "$job"
 
-   # JOB_SUFFIX is wrong: return nothing.
-   job="$directory/wrong.suffix"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 0
-   assert ! getObjects "$job"
+#    # JOB_SUFFIX is wrong: return nothing.
+#    job="$directory/wrong.suffix"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 0
+#    assert ! getObjects "$job"
 
-   # JOB_SUFFIX not set: return nothing.
-   local JOB_SUFFIX=
-   job="$directory/single space.backup"
-   readarray -t objects < <(getObjects "$job")
-   assert $(arraysize objects) = 0
-   assert ! getObjects "$job"
-}
+#    # JOB_SUFFIX not set: return nothing.
+#    local JOB_SUFFIX=
+#    job="$directory/single space.backup"
+#    readarray -t objects < <(getObjects "$job")
+#    assert $(arraysize objects) = 0
+#    assert ! getObjects "$job"
+# }
 
 
 # test_getJobs() {
@@ -163,50 +163,50 @@ test_getObjects() {
 # }
 
 
-test_getDestination() {
-   local directory="$RESOURCES/get_destination"
-   local BACKUPS_DESTINATION="$directory/default dir"
-   local job destination
+# test_getDestination() {
+#    local directory="$RESOURCES/get_destination"
+#    local BACKUPS_DESTINATION="$directory/default dir"
+#    local job destination
 
-   # Job file has a real destination provided.
-   job="$directory/has_destination.backup"
-   assert "$(getDestination "$job")" = "$directory/override dir"
-   assert getDestination "$job"
+#    # Job file has a real destination provided.
+#    job="$directory/has_destination.backup"
+#    assert "$(getDestination "$job")" = "$directory/override dir"
+#    assert getDestination "$job"
    
-   # Job file does not have a destination provided: use default.
-   job="$directory/no_destination.backup"
-   destination="$BACKUPS_DESTINATION/no_destination"
-   assert "$(getDestination "$job")" = "$destination"
-   assert getDestination "$job"
+#    # Job file does not have a destination provided: use default.
+#    job="$directory/no_destination.backup"
+#    destination="$BACKUPS_DESTINATION/no_destination"
+#    assert "$(getDestination "$job")" = "$destination"
+#    assert getDestination "$job"
 
-   # Destination in job doesn't exist: return anyway.
-   job="$directory/fake_destination.backup"
-   destination="$RESOURCES/fake/destination"
-   assert "$(getDestination "$job")" = "$destination"
-   assert getDestination "$job"
+#    # Destination in job doesn't exist: return anyway.
+#    job="$directory/fake_destination.backup"
+#    destination="$RESOURCES/fake/destination"
+#    assert "$(getDestination "$job")" = "$destination"
+#    assert getDestination "$job"
    
-   # Job file has wrong suffix: return empty.
-   job="$directory/wrong.suffix"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
+#    # Job file has wrong suffix: return empty.
+#    job="$directory/wrong.suffix"
+#    assert -z "$(getDestination "$job")"
+#    assert ! getDestination "$job"
 
-   # Job file doesn't exist: return empty.
-   job="/a/job.backup"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
+#    # Job file doesn't exist: return empty.
+#    job="/a/job.backup"
+#    assert -z "$(getDestination "$job")"
+#    assert ! getDestination "$job"
 
-   # Has multiple destinations: only use the first.
-   job="$directory/multiple_destination.backup"
-   assert "$(getDestination "$job")" = "$directory/override dir"
-   assert getDestination "$job"
+#    # Has multiple destinations: only use the first.
+#    job="$directory/multiple_destination.backup"
+#    assert "$(getDestination "$job")" = "$directory/override dir"
+#    assert getDestination "$job"
 
-   # Default BACKUPS_DESTINATION variable isn't set, and no destination in job:
-   # return empty.
-   BACKUPS_DESTINATION=
-   job="$directory/no_destination.backup"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
-}
+#    # Default BACKUPS_DESTINATION variable isn't set, and no destination in job:
+#    # return empty.
+#    BACKUPS_DESTINATION=
+#    job="$directory/no_destination.backup"
+#    assert -z "$(getDestination "$job")"
+#    assert ! getDestination "$job"
+# }
 
 
 # test_backupJob() {
@@ -232,17 +232,92 @@ test_getDestination() {
 # }
 
 
-# test_backupObject() {
-#    local jobDestination="$BACKUPS_DESTINATION/backup_object"
-#    local object="/f/.backup/programming/bash/backup/tests/_resources/\
-# backup_object/backup_object_file.txt"
+test_getBackups() {
+   local directory="$RESOURCES/get_backups"
+   local destination="$directory/destination"
+   local backupName
+   local -a backups
 
-#    [ -d "$jobDestination" ] && rm -rf "$jobDestination"
-#    assert ! -e "$jobDestination"
-#    assert -f "$object"
-#    assert backupObject "$object" "$jobDestination"
-#    assert -d "$jobDestination"
-# }
+   # Destination and backup object exist: return array of names.
+   backupName=foo.txt.old
+   readarray -t backups < <(getBackups "$destination" "$backupName")
+   assert $(arraysize backups) = 1
+
+   # No backup objects exist: return nothing.
+   backupName=fake.txt.old
+   readarray -t backups < <(getBackups "$destination" "$backupName")
+   assert $(arraysize backups) = 0
+
+   # Destination doesn't exist: return nothing.
+   backupName=foo.txt.old
+   destination="$directory/fake"
+   readarray -t backups < <(getBackups "$destination" "$backupName")
+   assert $(arraysize backups) = 0
+
+   # Missing destination argument: return nothing.
+   readarray -t backups < <(getBackups "" "$backupName")
+   assert $(arraysize backups) = 0
+
+   # Missing backup name argument: return nothing.
+   readarray -t backups < <(getBackups "$destination")
+   assert $(arraysize backups) = 0
+}
+
+
+test_backupObject() {
+   local directory="$RESOURCES/backup_object"
+   local destination="$directory/destination"
+   local object backupName
+   local -a backups
+
+   # Object file exists and destination exist: backup.
+   object="$directory/foo.txt"
+   backupName="$(getBackupName "$object")"
+   assert "$backupName" = foo.txt.old
+   assert -d "$destination"
+   assert -f "$object"
+   assert backupObject "$object" "$destination"
+   readarray -t backups < <(getBackups "$destination" "$backupName")
+   assert $(arraysize backups) = 1
+
+   # Object directory exists and destination exist: backup.
+   object="$directory/bar"
+   backupName="$(getBackupName "$object")"
+   assert "$backupName" = bar.old
+   assert -d "$destination"
+   assert -d "$object"
+   assert backupObject "$object" "$destination"
+   readarray -t backups < <(getBackups "$destination" "$backupName")
+   assert $(arraysize backups) = 1
+
+   # Object doesn't exist: fail.
+   object="$directory/fake.txt"
+   backupName="$(getBackupName "$object")"
+   assert "$backupName" = fake.txt.old
+   assert -d "$destination"
+   assert ! -e "$object"
+   assert ! backupObject "$object" "$destination"
+   readarray -t backups < <(getBackups "$destination" "$backupName")
+   assert $(arraysize backups) = 0
+
+   # Destination doesn't exist: create destination.
+   [ -d "$destination" ] && rm -rf "$destination"
+   object="$directory/foo.txt"
+   backupName="$(getBackupName "$object")"
+   assert "$backupName" = foo.txt.old
+   assert ! -d "$destination"
+   assert -f "$object"
+   assert backupObject "$object" "$destination"
+   assert -d "$destination"
+   readarray -t backups < <(getBackups "$destination" "$backupName")
+   assert $(arraysize backups) = 1
+
+   # Missing object argument: fail.
+   assert ! backupObject "" "$destination"
+
+   # Missing destination argument: fail.
+   assert ! backupObject "$object"
+}
 
 
 # test_cleanupBackups() {

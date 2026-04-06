@@ -255,14 +255,30 @@ getObjects() {
 }
 
 
-# $1=job destination; $2=backup name
+# $1=destination; $2=backup name; $3=job name for logging
 #
 # Find all backed up objects at a job's destination.
 getBackups() {
-   local jobDestination="$1"
+   local destination="$1"
    local backupName="$2"
+   local jobName="$3"
 
-   find "$jobDestination" -maxdepth 1 -name "*$backupName"
+   if [ -z "$destination" ]; then
+      log "Missing destination argument to getBackups()" "$jobName" fail
+      return 1
+   fi
+
+   if [ -z "$backupName" ]; then
+      log "Missing backup name argument to getBackups()" "$jobName" fail
+      return 1
+   fi
+
+   if [ ! -d "$destination" ]; then
+      log "getBackups() couldn't find directory: $destination" "$jobName" fail
+      return 1
+   fi
+
+   find "$destination" -maxdepth 1 -name "*$backupName"
 }
 
 
@@ -304,7 +320,8 @@ cleanupBackups() {
 
    while [ $failsafe -lt 5 ]; do
       (( failsafe++ ))
-      readarray -t backups< <(getBackups "$jobDestination" "$backupName")
+      readarray -t backups< <(getBackups "$jobDestination" "$backupName" \
+         "$jobName")
       backupsWithinLimit backups && break
 
       local oldestBackup="${backups[0]}"
@@ -314,13 +331,26 @@ cleanupBackups() {
 }
 
 
-# $1=object; $2=job destination; $3=job name for logging
+# $1=object; $2=destination; $3=job name for logging
 backupObject() {
    local object="$1"
-   local jobDestination="$2"
+   local destination="$2"
    local jobName="$3"
 
-   [ -e "$object" ] || return
+   if [ -z "$object" ]; then
+      log "Object argument missing to backupObject()" "$jobName" fail
+      return 1
+   fi
+
+   if [ -z "$destination" ]; then
+      log "Destination argument missing to backupObject()" "$jobName" ""
+      return 1
+   fi
+
+   if [ ! -e "$object" ]; then
+      log "Object doesn't exist for backup: $object" "$jobName" fail
+      return 1
+   fi
 
    local backupCommand="rsync -a"  # a=archive (AKA copy *all* attributes)
    if ! commandIsAvailable "rsync"; then
@@ -335,25 +365,25 @@ backupObject() {
       return 1
    fi
 
-   if [ ! -d "$jobDestination" ]; then
-      log "Creating destination directory: $jobDestination" "$jobName"
-      mkdir -p "$jobDestination"
+   if [ ! -d "$destination" ]; then
+      log "Creating destination directory: $destination" "$jobName"
+      mkdir -p "$destination"
 
-      if [ ! -d "$jobDestination" ]; then
-         log "Error creating destination: $jobDestination" "$jobName" fail
+      if [ ! -d "$destination" ]; then
+         log "Error creating destination: $destination" "$jobName" fail
          return 1
       fi
 
-      log "Created destination directory: $jobDestination" "$jobName"
+      log "Created destination directory: $destination" "$jobName"
    fi
 
-   if ! $backupCommand "$object" "${jobDestination}/${datedBackupName}"; then
+   if ! $backupCommand "$object" "${destination}/${datedBackupName}"; then
       log "Failed to backup: $object" "$jobName" fail
       return 1
    fi
 
    log "Backed up: $object" "$jobName"
-   cleanupBackups "$jobDestination" "$backupName" "$jobName"
+   cleanupBackups "$destination" "$backupName" "$jobName"
 }
 
 
@@ -363,7 +393,7 @@ backupObject() {
 # any extra backups.
 backupJob() {
    local job="$1"
-   local jobName jobDestination object
+   local jobName destination object
    local -a objects
 
    log "Starting backup" "$jobName"
@@ -375,7 +405,7 @@ backupJob() {
       return 1
    fi
 
-   jobDestination="$(getDestination "$job")"
+   destination="$(getDestination "$job")"
    readarray -t objects < <(getObjects "$job" "$jobName")
 
    if ! arrayfilled objects; then
@@ -384,7 +414,7 @@ backupJob() {
    fi
 
    for object in "${objects[@]}"; do
-      backupObject "$object" "$jobDestination" "$jobName"
+      backupObject "$object" "$destination" "$jobName"
    done
 
    log "Finished backup" "$jobName"
