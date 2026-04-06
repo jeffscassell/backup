@@ -198,17 +198,12 @@ getDestination() {
       fi
    done < "$job"
 
-   # Use default if none was set in job.
-   [ -z "$destination" ] && destination="$BACKUPS_DESTINATION"
+   # Use default if none was set in job, if BACKUPS_DESTINATION set.
+   [ -z "$destination" ] && [ -n "$BACKUPS_DESTINATION" ] \
+      && destination="$BACKUPS_DESTINATION/$jobName"
 
    if [ -z "$destination" ]; then
       log "No destination found and BACKUPS_DESTINATION not set" "$jobName" fail
-      echo
-      return 1
-   fi
-
-   if [ ! -d "$destination" ]; then
-      log "Destination doesn't exist: $destination" "$jobName" fail
       echo
       return 1
    fi
@@ -220,34 +215,41 @@ getDestination() {
 
 # $1=job file
 #
-# Parse a job file for paths and return only valid paths. If any valid paths
-# exist a status code of 0 is returned.
+# Parse a job file for object paths and return only valid objects. If any
+# objects are returned a status code of 0 is returned.
+#
+# JOB_SUFFIX must be set.
 getObjects() {
    local job="$1"
    local status=1
-   local -a objects
-   local object
    local jobName="$(getJobName "$job")"
 
-   [ -f "$job" ] || return
-   
-   readarray -t objects < "$job"
-
-   if ! arrayfilled objects; then
-      log "Objects empty" "$jobName" fail
-      return $status
+   if [ ! -f "$job" ]; then
+      log "Job file doesn't exist: $job" "$jobName" fail
+      return 1
    fi
 
-   for object in "${objects[@]}"; do
-      
-      # Check that the provided file/directory exists.
-      if [ ! -e "$object" ]; then
-         log "Object doesn't exist: $object" "$jobName" fail
-      else
+   if [ -z "$JOB_SUFFIX" ]; then
+      log "JOB_SUFFIX not set, can't parse job: $job" "$jobName" fail
+      return 1
+   fi
+
+   if ! isValidJob "$job"; then
+      log "File suffix does not match JOB_SUFFIX: $job" "$jobName" fail
+      return 1
+   fi
+
+   while read line; do
+      if [ -e "$line" ]; then
+         echo "$line"
          status=0
-         echo "$object"
       fi
-   done
+   done < "$job"
+   
+   if [ $status = 1 ]; then
+      log "Job contained no valid objects: $job" "$jobName" fail
+      return $status
+   fi
 
    return $status
 }
@@ -373,7 +375,7 @@ backupJob() {
       return 1
    fi
 
-   jobDestination="${BACKUPS_DESTINATION}/${jobName}"
+   jobDestination="$(getDestination "$job")"
    readarray -t objects < <(getObjects "$job" "$jobName")
 
    if ! arrayfilled objects; then
