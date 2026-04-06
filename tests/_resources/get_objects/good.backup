@@ -1,0 +1,4 @@
+/f/.backup/programming/bash/backup/tests/_resources/_known_good/foo.txt
+/f/.backup/programming/bash/backup/tests/_resources/_known_good/bar
+/f/.backup/programming/bash/backup/tests/_resources/_known_good/baz space.txt
+destination=/f/.backup/programming/bash/backup/tests/_resources/_known_good/destination with a space

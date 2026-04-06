@@ -31,7 +31,6 @@
 # Configuration
 ###############
 
-# Source of backup "scripts".
 LOG_LOCATION=/f/.backup/programming/bash/backup/backups.log
 JOBS="$(cd -- "$(dirname -- "${BASH_SOURCE}")" &> /dev/null && pwd )"
 JOB_SUFFIX=.backup
@@ -68,6 +67,7 @@ variableIsSet() {
 # $1=array
 arraysize() {
    local -n array="$1"
+   [ -z "$1" ] && echo -1 && return
    echo ${#array[@]}
 }
 
@@ -75,7 +75,7 @@ arraysize() {
 # $1=array
 arrayfilled() {
    local -n array="$1"
-   [ -n "$array" ] || return
+   [ -n "$1" ] || return
    [ ${#array[@]} -gt 0 ]
 }
 
@@ -115,6 +115,12 @@ log() {
 }
 
 
+# $1=job
+isValidJob() {
+   echo "$1" | grep -q -E "^.*""$JOB_SUFFIX""$"
+}
+
+
 # $1=job file
 #
 # Parse the name of a job file to get its name, and perform
@@ -126,18 +132,12 @@ getJobName() {
    local filename="$(basename "$path")"  # job.backup
    local name="$(basename "$filename" "$JOB_SUFFIX")"  # job
 
-
-   isValidJobFile() {
-      echo "$filename" | grep -q -E "^.*""$JOB_SUFFIX""$"
-   }
-
-
    if ! variableIsSet JOB_SUFFIX; then
       echo
       return 1
    fi
 
-   if ! isValidJobFile "$filename"; then
+   if ! isValidJob "$filename"; then
       echo
       return 1
    fi
@@ -148,7 +148,7 @@ getJobName() {
 
 # $1=object path
 #
-# Parse and return a backup name based on an object path. For files, the
+# Parse an object and return the name it will use for backups. For files, the
 # extension is included. Works with relative and absolute paths.
 #
 # /a/path/to/file.txt -> file.txt.old
@@ -168,20 +168,70 @@ getBackupName() {
    echo "${name}${suffix}.old"
 }
 
+
+# $1=job file
+getDestination() {
+   local job="$1"
+   local destination key value
+   local jobName="$(getJobName "$job")"
+
+   if ! isValidJob "$job"; then
+      log "Not a valid job: $job" "$jobName" fail
+      echo
+      return 1
+   fi
+
+   if [ ! -f "$job" ]; then
+      log "Job doesn't exist: $job" "$jobName" fail
+      echo
+      return 1
+   fi
+
+   while read line; do
+      key="${line%%=*}"
+      value="${line##*=}"
+      
+      if [ "${key,,}" = "destination" ]; then
+         
+         # Only assign the first value found.
+         [ -z "$destination" ] && destination="$value"
+      fi
+   done < "$job"
+
+   # Use default if none was set in job.
+   [ -z "$destination" ] && destination="$BACKUPS_DESTINATION"
+
+   if [ -z "$destination" ]; then
+      log "No destination found and BACKUPS_DESTINATION not set" "$jobName" fail
+      echo
+      return 1
+   fi
+
+   if [ ! -d "$destination" ]; then
+      log "Destination doesn't exist: $destination" "$jobName" fail
+      echo
+      return 1
+   fi
+
+   echo "$destination"
+   return 0
+}
+
+
 # $1=job file
 #
 # Parse a job file for paths and return only valid paths. If any valid paths
 # exist a status code of 0 is returned.
-getValidObjects() {
-   local jobFile="$1"
+getObjects() {
+   local job="$1"
    local status=1
    local -a objects
    local object
-   local jobName="$(getJobName "$jobFile")"
+   local jobName="$(getJobName "$job")"
 
-   [ -f "$jobFile" ] || return
+   [ -f "$job" ] || return
    
-   readarray -t objects < "$jobFile"
+   readarray -t objects < "$job"
 
    if ! arrayfilled objects; then
       log "Objects empty" "$jobName" fail
@@ -192,7 +242,7 @@ getValidObjects() {
       
       # Check that the provided file/directory exists.
       if [ ! -e "$object" ]; then
-         log "Doesn't exist: $object" "$jobName" fail
+         log "Object doesn't exist: $object" "$jobName" fail
       else
          status=0
          echo "$object"
@@ -309,22 +359,22 @@ backupObject() {
 #
 # Process a job file and back up the associated objects within, then clean up
 # any extra backups.
-backup() {
-   local jobFile="$1"
+backupJob() {
+   local job="$1"
    local jobName jobDestination object
    local -a objects
 
    log "Starting backup" "$jobName"
 
    # Subdirectory for storage in the main backups directory.
-   jobName="$(getJobName "$jobFile")"
+   jobName="$(getJobName "$job")"
    if [ -z "$jobName" ]; then
-      log "Couldn't parse job name: $jobFile" "" fail
+      log "Couldn't parse job name: $job" "" fail
       return 1
    fi
 
    jobDestination="${BACKUPS_DESTINATION}/${jobName}"
-   readarray -t objects < <(getValidObjects "$jobFile" "$jobName")
+   readarray -t objects < <(getObjects "$job" "$jobName")
 
    if ! arrayfilled objects; then
       log "No valid sources exist" "$jobName" fail
@@ -341,37 +391,60 @@ backup() {
 
 
 # $1=jobs directory (optional)
-getJobFiles() {
+#
+# Find job files (.backup) within a directory. Does not recurse into
+# subdirectories.
+#
+# JOB_SUFFIX must be set.
+getJobs() {
    local directory="${1-$JOBS}"
-   [ -n "$directory" ] || return
-   [ -d "$directory" ] || return
+   local -a jobs
+   local job
 
-   find "$directory" -maxdepth 1 -name "*$JOB_SUFFIX"
+   variableIsSet JOB_SUFFIX || return
+
+   if [ -z "$directory" ]; then
+      error "No directory argument or JOBS variable set for getJobs()"
+      return 1
+   fi
+
+   if [ ! -d "$directory" ]; then
+      error "Argument passed to getJobFiles() is not a directory"
+      return 1
+   fi
+
+   readarray -t jobs < <(find "$directory" -maxdepth 1 -type f \
+      -name "*$JOB_SUFFIX")
+   
+   # Filter out directories that might have the same suffix, for some reason.
+   for job in "${jobs[@]}"; do
+      [ -f "$job" ] && echo "$job"
+   done
 }
 
 
 # $1=backup file(s) (optional)
 main() {
-   local jobFile
-   local -a jobFiles
+   local job
+   local -a jobs
 
 
    # If job file(s) are passed explicitly, prefer those.
    if [ -n "$1" ]; then
-      jobFiles=("$@")
-      for jobFile in "${jobFiles[@]}"; do
+      jobs=("$@")
+      for job in "${jobs[@]}"; do
          
-         if [ ! -f "$jobFile" ]; then
-            log "Could not find file: $jobFile" "" fail
+         if [ ! -f "$job" ]; then
+            log "Could not find file: $job" "" fail
             continue
          fi
       done
    else
-      readarray -t jobFiles < <(getJobFiles)
+      readarray -t jobs < <(getJobs)
    fi
 
-   for jobFile in "${jobFiles[@]}"; do
-      backup "$jobFile"
+   for job in "${jobs[@]}"; do
+      backupJob "$job"
    done
 }
 
