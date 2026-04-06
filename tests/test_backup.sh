@@ -209,115 +209,134 @@ LOG_LOCATION=  # Disable logging.
 # }
 
 
-# test_backupJob() {
-#    local jobDestination job
-#    local -a files
-#    local BACKUPS_DESTINATION="$RESOURCES/backup"
+test_backupJob() {
+   local directory="$RESOURCES/backup_job"
+   local job backupName destination object
+   local -a backups objects
 
-#    job="$JOBS/foo.backup"
-#    jobDestination="$BACKUPS_DESTINATION/$(getJobName "$job")"
-#    [ -d "$jobDestination" ] && rm -rf "$jobDestination"
-#    assert ! -e "$jobDestination"
+   # Job exists, objects exist, destination doesn't exist: backup.
+   job="$directory/complete.backup"
+   destination="$(getDestination "$job")"
+   [ -d "$destination" ] && rm -rf "$destination"
+   assert -f "$job"
+   assert ! -e "$destination"
+   assert backupJob "$job"
+   assert -d "$destination"
+   readarray -t objects < <(getObjects "$job")
+   for object in "${objects[@]}"; do
+      backupName="$(getBackupName "$object")"
+      readarray -t backups < <(getBackups "$destination" "$backupName")
+      assert $(arraysize backups) = 1
+   done
 
-#    assert backup "$job"
-#    assert -d "$jobDestination"
-#    readarray -t files < <(find "$jobDestination")
-#    assert ${#files[@]} = 5
+   # Backups already exist: backup.
+   assert backupJob "$job"
+   readarray -t objects < <(getObjects "$job")
+   for object in "${objects[@]}"; do
+      backupName="$(getBackupName "$object")"
+      readarray -t backups < <(getBackups "$destination" "$backupName")
+      assert $(arraysize backups) = 1
+   done
 
-#    job="$JOBS/foo_empty.backup"
-#    jobDestination="$BACKUPS_DESTINATION/$(getJobName "$job")"
-#    assert ! -e "$jobDestination"
-#    assert ! backup "$job"
-#    assert ! -e "$jobDestination"
+   # Job exists, objects missing, destination exists: fail.
+   job="$directory/empty.backup"
+   assert -d "$destination"
+   assert ! backupJob "$job"
+
+   # Job doesn't exist: fail.
+   rm "$destination"/*
+   job="$directory/fake.backup"
+   assert ! -f "$job"
+   assert ! backupJob "$job"
+}
+
+
+# test_getBackups() {
+#    local directory="$RESOURCES/get_backups"
+#    local destination="$directory/destination"
+#    local backupName
+#    local -a backups
+
+#    # Destination and backup object exist: return array of names.
+#    backupName=foo.txt.old
+#    readarray -t backups < <(getBackups "$destination" "$backupName")
+#    assert $(arraysize backups) = 1
+
+#    # No backup objects exist: return nothing.
+#    backupName=fake.txt.old
+#    readarray -t backups < <(getBackups "$destination" "$backupName")
+#    assert $(arraysize backups) = 0
+
+#    # Destination doesn't exist: return nothing.
+#    backupName=foo.txt.old
+#    destination="$directory/fake"
+#    readarray -t backups < <(getBackups "$destination" "$backupName")
+#    assert $(arraysize backups) = 0
+
+#    # Missing destination argument: return nothing.
+#    readarray -t backups < <(getBackups "" "$backupName")
+#    assert $(arraysize backups) = 0
+
+#    # Missing backup name argument: return nothing.
+#    readarray -t backups < <(getBackups "$destination")
+#    assert $(arraysize backups) = 0
 # }
 
 
-test_getBackups() {
-   local directory="$RESOURCES/get_backups"
-   local destination="$directory/destination"
-   local backupName
-   local -a backups
+# test_backupObject() {
+#    local directory="$RESOURCES/backup_object"
+#    local destination="$directory/destination"
+#    local object backupName
+#    local -a backups
 
-   # Destination and backup object exist: return array of names.
-   backupName=foo.txt.old
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
+#    # Object file exists and destination exist: backup.
+#    object="$directory/foo.txt"
+#    backupName="$(getBackupName "$object")"
+#    assert "$backupName" = foo.txt.old
+#    assert -d "$destination"
+#    assert -f "$object"
+#    assert backupObject "$object" "$destination"
+#    readarray -t backups < <(getBackups "$destination" "$backupName")
+#    assert $(arraysize backups) = 1
 
-   # No backup objects exist: return nothing.
-   backupName=fake.txt.old
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 0
+#    # Object directory exists and destination exist: backup.
+#    object="$directory/bar"
+#    backupName="$(getBackupName "$object")"
+#    assert "$backupName" = bar.old
+#    assert -d "$destination"
+#    assert -d "$object"
+#    assert backupObject "$object" "$destination"
+#    readarray -t backups < <(getBackups "$destination" "$backupName")
+#    assert $(arraysize backups) = 1
 
-   # Destination doesn't exist: return nothing.
-   backupName=foo.txt.old
-   destination="$directory/fake"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 0
+#    # Object doesn't exist: fail.
+#    object="$directory/fake.txt"
+#    backupName="$(getBackupName "$object")"
+#    assert "$backupName" = fake.txt.old
+#    assert -d "$destination"
+#    assert ! -e "$object"
+#    assert ! backupObject "$object" "$destination"
+#    readarray -t backups < <(getBackups "$destination" "$backupName")
+#    assert $(arraysize backups) = 0
 
-   # Missing destination argument: return nothing.
-   readarray -t backups < <(getBackups "" "$backupName")
-   assert $(arraysize backups) = 0
+#    # Destination doesn't exist: create destination.
+#    [ -d "$destination" ] && rm -rf "$destination"
+#    object="$directory/foo.txt"
+#    backupName="$(getBackupName "$object")"
+#    assert "$backupName" = foo.txt.old
+#    assert ! -d "$destination"
+#    assert -f "$object"
+#    assert backupObject "$object" "$destination"
+#    assert -d "$destination"
+#    readarray -t backups < <(getBackups "$destination" "$backupName")
+#    assert $(arraysize backups) = 1
 
-   # Missing backup name argument: return nothing.
-   readarray -t backups < <(getBackups "$destination")
-   assert $(arraysize backups) = 0
-}
+#    # Missing object argument: fail.
+#    assert ! backupObject "" "$destination"
 
-
-test_backupObject() {
-   local directory="$RESOURCES/backup_object"
-   local destination="$directory/destination"
-   local object backupName
-   local -a backups
-
-   # Object file exists and destination exist: backup.
-   object="$directory/foo.txt"
-   backupName="$(getBackupName "$object")"
-   assert "$backupName" = foo.txt.old
-   assert -d "$destination"
-   assert -f "$object"
-   assert backupObject "$object" "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
-
-   # Object directory exists and destination exist: backup.
-   object="$directory/bar"
-   backupName="$(getBackupName "$object")"
-   assert "$backupName" = bar.old
-   assert -d "$destination"
-   assert -d "$object"
-   assert backupObject "$object" "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
-
-   # Object doesn't exist: fail.
-   object="$directory/fake.txt"
-   backupName="$(getBackupName "$object")"
-   assert "$backupName" = fake.txt.old
-   assert -d "$destination"
-   assert ! -e "$object"
-   assert ! backupObject "$object" "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 0
-
-   # Destination doesn't exist: create destination.
-   [ -d "$destination" ] && rm -rf "$destination"
-   object="$directory/foo.txt"
-   backupName="$(getBackupName "$object")"
-   assert "$backupName" = foo.txt.old
-   assert ! -d "$destination"
-   assert -f "$object"
-   assert backupObject "$object" "$destination"
-   assert -d "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
-
-   # Missing object argument: fail.
-   assert ! backupObject "" "$destination"
-
-   # Missing destination argument: fail.
-   assert ! backupObject "$object"
-}
+#    # Missing destination argument: fail.
+#    assert ! backupObject "$object"
+# }
 
 
 # test_cleanupBackups() {

@@ -396,9 +396,19 @@ backupJob() {
    local jobName destination object
    local -a objects
 
+   if [ -z "$job" ]; then
+      log "No job passed to backupJob()" "" fail
+      return 1
+   fi
+
+   if [ ! -f "$job" ]; then
+      log "backupJob(): job file doesn't exist: $job" "" fail
+      return 1
+   fi
+
    log "Starting backup" "$jobName"
 
-   # Subdirectory for storage in the main backups directory.
+   # Used for storage subdirectory (if JOBS directory used) and logging.
    jobName="$(getJobName "$job")"
    if [ -z "$jobName" ]; then
       log "Couldn't parse job name: $job" "" fail
@@ -406,10 +416,15 @@ backupJob() {
    fi
 
    destination="$(getDestination "$job")"
+   if [ -z "$destination" ]; then
+      log "Couldn't parse backup name: $job" "$jobName" fail
+      return 1
+   fi
+
    readarray -t objects < <(getObjects "$job" "$jobName")
 
    if ! arrayfilled objects; then
-      log "No valid sources exist" "$jobName" fail
+      log "No valid objects exist" "$jobName" fail
       return 1
    fi
 
