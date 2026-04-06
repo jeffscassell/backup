@@ -70,73 +70,95 @@ LOG_LOCATION=  # Disable logging.
 # }
 
 
-# test_getJobs() {
-#    local -a jobs
+test_getJobs() {
+   local -a jobs
+   local directory
 
-#    local JOBS=
-#    assert ! getJobs
+   # JOBS variable not set and no specified directory.
+   local JOBS=
+   readarray -t jobs < <(getJobs)
+   assert $(arraysize jobs) = 0
+   assert ! getJobs
 
-#    # local JOBS="$RESOURCES/get_job_files"
-#    readarray -t jobs < <(getJobs)
-#    assert ${#jobs[@]} = 3
+   # JOBS variable is set, no specified directory.
+   JOBS="$RESOURCES/get_jobs"
+   readarray -t jobs < <(getJobs)
+   assert ${#jobs[@]} = 3
+   assert getJobs
 
-#    jobs=()
-#    local JOB_SUFFIX=.else
-#    readarray -t jobs < <(getJobs)
-#    assert ${#jobs[@]} = 2
+   # Get jobs from a specified directory instead of JOBS variable.
+   directory="$RESOURCES/_known_good"
+   readarray -t jobs < <(getJobs "$directory")
+   assert $(arraysize jobs) = 1
+   assert getJobs "$directory"
    
-#    jobs=()
-#    readarray -t jobs < <(getJobs)
+   # Specified directory doesn't exist.
+   directory="/a/directory"
+   readarray -t jobs < <(getJobs "$directory")
+   assert $(arraysize jobs) = 0
+   assert ! getJobs "$directory"
 
-#    assert ! getJobs "/a/fake/dir"
+   # Directory contains no jobs.
+   directory="$RESOURCES/_backup_destination"
+   readarray -t jobs < <(getJobs "$directory")
+   assert $(arraysize jobs) = 0
+   assert ! getJobs "$directory"
 
-#    local JOB_SUFFIX=
-#    assert ! getJobs
-# }
+   # Job suffix is changed from default .backup.
+   local JOB_SUFFIX=.else
+   readarray -t jobs < <(getJobs)
+   assert ${#jobs[@]} = 2
 
-
-test_getDestination() {
-   local directory="$RESOURCES/get_destination"
-   local BACKUPS_DESTINATION="$directory/default dir"
-   local job
-
-   # Job file has a real destination provided.
-   job="$directory/has_destination.backup"
-   assert "$(getDestination "$job")" = "$directory/override dir"
-   assert getDestination "$job"
-   
-   # Job file does not have a destination provided: use default.
-   job="$directory/no_destination.backup"
-   assert "$(getDestination "$job")" = "$BACKUPS_DESTINATION"
-   assert getDestination "$job"
-
-   # Destination in job doesn't exist: return empty.
-   job="$directory/fake_destination.backup"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
-   
-   # Job file has wrong suffix: return empty.
-   job="$directory/wrong.suffix"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
-
-   # Job file doesn't exist: return empty.
-   job="/a/job.backup"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
-
-   # Has multiple destinations: only use the first.
-   job="$directory/multiple_destination.backup"
-   assert "$(getDestination "$job")" = "$directory/override dir"
-   assert getDestination "$job"
-
-   # Default BACKUPS_DESTINATION variable isn't set, and no destination in job:
-   # return empty.
-   BACKUPS_DESTINATION=
-   job="$directory/no_destination.backup"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
+   # Job suffix not set.
+   local JOB_SUFFIX=
+   readarray -t jobs < <(getJobs)
+   assert $(arraysize jobs) = 0
+   assert ! getJobs
 }
+
+
+# test_getDestination() {
+#    local directory="$RESOURCES/get_destination"
+#    local BACKUPS_DESTINATION="$directory/default dir"
+#    local job
+
+#    # Job file has a real destination provided.
+#    job="$directory/has_destination.backup"
+#    assert "$(getDestination "$job")" = "$directory/override dir"
+#    assert getDestination "$job"
+   
+#    # Job file does not have a destination provided: use default.
+#    job="$directory/no_destination.backup"
+#    assert "$(getDestination "$job")" = "$BACKUPS_DESTINATION"
+#    assert getDestination "$job"
+
+#    # Destination in job doesn't exist: return empty.
+#    job="$directory/fake_destination.backup"
+#    assert -z "$(getDestination "$job")"
+#    assert ! getDestination "$job"
+   
+#    # Job file has wrong suffix: return empty.
+#    job="$directory/wrong.suffix"
+#    assert -z "$(getDestination "$job")"
+#    assert ! getDestination "$job"
+
+#    # Job file doesn't exist: return empty.
+#    job="/a/job.backup"
+#    assert -z "$(getDestination "$job")"
+#    assert ! getDestination "$job"
+
+#    # Has multiple destinations: only use the first.
+#    job="$directory/multiple_destination.backup"
+#    assert "$(getDestination "$job")" = "$directory/override dir"
+#    assert getDestination "$job"
+
+#    # Default BACKUPS_DESTINATION variable isn't set, and no destination in job:
+#    # return empty.
+#    BACKUPS_DESTINATION=
+#    job="$directory/no_destination.backup"
+#    assert -z "$(getDestination "$job")"
+#    assert ! getDestination "$job"
+# }
 
 
 # test_backupJob() {

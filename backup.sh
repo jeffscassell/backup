@@ -401,7 +401,10 @@ getJobs() {
    local -a jobs
    local job
 
-   variableIsSet JOB_SUFFIX || return
+   if [ -z "$JOB_SUFFIX" ]; then
+      log "JOB_SUFFIX not set, can't parse directory: $directory" "" fail
+      return 1
+   fi
 
    if [ -z "$directory" ]; then
       error "No directory argument or JOBS variable set for getJobs()"
@@ -409,17 +412,20 @@ getJobs() {
    fi
 
    if [ ! -d "$directory" ]; then
-      error "Argument passed to getJobFiles() is not a directory"
+      error "Argument passed to getJobFiles() is not a directory: $directory"
       return 1
    fi
 
    readarray -t jobs < <(find "$directory" -maxdepth 1 -type f \
       -name "*$JOB_SUFFIX")
    
-   # Filter out directories that might have the same suffix, for some reason.
-   for job in "${jobs[@]}"; do
-      [ -f "$job" ] && echo "$job"
-   done
+   if ! arrayfilled jobs; then
+      log "No jobs found in directory: $directory" "" fail
+      return 1
+   fi
+
+   printf "%s\n" "${jobs[@]}"
+   return 0
 }
 
 
