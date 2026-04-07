@@ -21,6 +21,9 @@
 # [jellyfin.backup]
 # /server/config
 # /server/cache
+# 
+# # Optional.
+# #destination=/override/the/default/JOBS/directory
 #
 # --- Sample Backup ---
 # [backups/jellyfin]
@@ -31,8 +34,9 @@
 # Configuration
 ###############
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE}")" &> /dev/null && pwd )"
 LOG_LOCATION=/f/.backup/programming/bash/backup/backups.log
-JOBS="$(cd -- "$(dirname -- "${BASH_SOURCE}")" &> /dev/null && pwd )"
+JOBS="$SCRIPT_DIR"
 JOB_SUFFIX=.backup
 BACKUPS_LIMIT=2
 BACKUPS_DESTINATION=/f/.backup/programming/bash/backup/backups
@@ -262,6 +266,7 @@ getBackups() {
    local destination="$1"
    local backupName="$2"
    local jobName="$3"
+   local -a backups
 
    if [ -z "$destination" ]; then
       log "Missing destination argument to getBackups()" "$jobName" fail
@@ -278,7 +283,15 @@ getBackups() {
       return 1
    fi
 
-   find "$destination" -maxdepth 1 -name "*$backupName"
+   # Defunct because it orders files unpredictably (sometimes 1-9 then 0, others
+   # 0-9, and others still something else entirely).
+   # find "$destination" -maxdepth 1 -name "*$backupName"
+
+   nullglobSetting="$(shopt -p nullglob)"
+   shopt -s nullglob
+   backups=("$destination"/*"$backupName")
+   $nullglobSetting
+   arrayfilled backups && printf "%s\n" "${backups[@]}"
 }
 
 
@@ -327,7 +340,7 @@ cleanupBackups() {
 
       local oldestBackup="${backups[0]}"
       rm -rf "$oldestBackup"
-      log "Removed extra backup: $oldestBackup" "$jobName"
+      log "Removed oldest backup: $oldestBackup" "$jobName"
    done
 
    return 1
@@ -381,11 +394,11 @@ backupObject() {
    fi
 
    if ! $backupCommand "$object" "${destination}/${datedBackupName}"; then
-      log "Failed to backup: $object" "$jobName" fail
+      log "Failed to backup: $datedBackupName" "$jobName" fail
       return 1
    fi
 
-   log "Backed up: $object" "$jobName"
+   log "Backed up: $datedBackupName" "$jobName"
    cleanupBackups "$destination" "$backupName" "$jobName"
 }
 
@@ -409,14 +422,14 @@ backupJob() {
       return 1
    fi
 
-   log "Starting backup" "$jobName"
-
    # Used for storage subdirectory (if JOBS directory used) and logging.
    jobName="$(getJobName "$job")"
    if [ -z "$jobName" ]; then
       log "Couldn't parse job name: $job" "" fail
       return 1
    fi
+
+   log "Starting backup" "$jobName"
 
    destination="$(getDestination "$job")"
    if [ -z "$destination" ]; then
@@ -484,7 +497,6 @@ main() {
    local job
    local -a jobs
 
-
    # If job file(s) are passed explicitly, prefer those.
    if [ -n "$1" ]; then
       jobs=("$@")
@@ -505,14 +517,73 @@ main() {
 }
 
 
-# Run all .backup files found in BACKUPS_SRC directory.
-if [ "$1" = "run" ]; then
-   main
-   exit
-fi
+readConfig() {
+   local default="$SCRIPT_DIR/backup.conf"
+   local config="${1:-"$default"}"
+   local key value
+   
 
-# Run specific .backup file(s).
-if [ -n "$1" ]; then
-   main "$@"
-   exit
-fi
+   # $1=option
+   isConfigOption() {
+      local option="$1"
+      local variable
+      local VARIABLES=("LOG_LOCATION" "JOBS" "JOB_SUFFIX" "BACKUPS_LIMIT" \
+         "BACKUPS_DESTINATION")
+
+      for variable in "${VARIABLES[@]}"; do
+         [ "$variable" = "$option" ] && return 0
+      done
+
+      return 1
+   }
+
+
+   if [ ! -f "$config" ]; then
+      error "Couldn't find config: $config"
+      return 1
+   fi
+
+   while read line; do
+      key="${line%%=*}"
+      value="${line##*=}"
+
+      if isConfigOption "$key"; then
+         [ -z "$value" ] && continue
+
+         echo "eval'd: $key=$value"
+         eval "$key=$value"
+      fi
+   done < "$config"
+
+   echo "LOG_LOCATION: $LOG_LOCATION"
+}
+
+
+while [ $# -gt 0 ]; do
+   case "$1" in
+      -c)
+         readConfig "$2"
+         shift 2
+         ;;
+      run)
+         main
+         exit
+         ;;
+      *)
+         main "$@"
+         exit
+         ;;
+   esac
+done
+
+# # Run all .backup files found in BACKUPS_SRC directory.
+# if [ "$1" = "run" ]; then
+#    main
+#    exit
+# fi
+
+# # Run specific .backup file(s).
+# if [ -n "$1" ]; then
+#    main "$@"
+#    exit
+# fi

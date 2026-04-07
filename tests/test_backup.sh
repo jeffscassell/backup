@@ -210,15 +210,25 @@ test_getDestination() {
 
 
 test_getBackups() {
-   local directory="$RESOURCES/get_backups"
-   local destination="$directory/destination"
-   local backupName
+   local destination="$RESOURCES/get_backups"
+   local backupName backup year foundYear
    local -a backups
 
    # Destination and backup object exist: return array of names.
    backupName=foo.txt.old
    readarray -t backups < <(getBackups "$destination" "$backupName")
    assert $(arraysize backups) = 1
+
+   # Backups are gathered in order of oldest first.
+   backupName=order.txt.old
+   readarray -t backups < <(getBackups "$destination" "$backupName")
+   assert $(arraysize backups) = 3
+   year=2020
+   for backup in "${backups[@]}"; do
+      foundYear="${backup##*/}"
+      foundYear="${foundYear%%-*}"
+      assert "$foundYear" = $(( year++ ))
+   done
 
    # No backup objects exist: return nothing.
    backupName=fake.txt.old
@@ -238,6 +248,11 @@ test_getBackups() {
    # Missing backup name argument: return nothing.
    readarray -t backups < <(getBackups "$destination")
    assert $(arraysize backups) = 0
+}
+
+
+test_readConfig() {
+   echo
 }
 
 
