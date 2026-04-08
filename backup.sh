@@ -248,6 +248,7 @@ getDestination() {
    local job="$1"
    local destination key value
    local jobName="$(getJobName "$job")"
+   local resolved
 
    if [ ! -f "$job" ]; then
       log "Job doesn't exist: $job" "$jobName" fail
@@ -272,7 +273,15 @@ getDestination() {
       value="$(echo "$value" | sed "s/^[[:space:]]*//; s/[[:space:]]*$//")"
 
       if [ "${value:0:3}" = "../" ] || [ "${value:0:2}" = "./" ]; then
-         value="$(getAbsolute "$value" "$job")"
+         resolved="$(getAbsolute "$value" "$job")"
+
+         if [ -z "$resolved" ]; then
+            log "Relative destination's parent does not exist: $value" \
+               "$jobName" fail
+            return 1
+         fi
+
+         value="$resolved"
       fi
       
       [ -n "$value" ] && destination="$value"
@@ -496,7 +505,7 @@ backupObject() {
       log "Created destination directory: $destination" "$jobName"
    fi
 
-   log "Backing up: $datedBackupName"
+   log "Backing up: $datedBackupName" "$jobName"
    $backupCommand "$object" "${destination}/${datedBackupName}" || return 1
    return 0
 }
@@ -535,7 +544,7 @@ backupJob() {
 
    destination="$(getDestination "$job")"
    if [ -z "$destination" ]; then
-      log "No destination found" "$jobName" fail
+      log "No destination selected" "$jobName" fail
       return 1
    fi
 
