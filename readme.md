@@ -7,10 +7,17 @@ Meant to be used with smaller `job` files (.backup) that contain `objects`
 
 A `job` file can contain directories and files, and can specify an optional
 `destination` variable to override the default backups directory. For a `job`
-named `job_name.backup`, the default backup directory is
+named `job_name.backup`, the default backup directory will be
 `$BACKUPS_DIRECTORY/job_name`. This directory will contain backups of all
 the objects specified in the `job`, dated but not timestamped like so:
 `2026-01-01_object_file.txt.old`.
+
+While a `job`'s objects and destination *can* be relative paths, it's not
+recommended. It's mostly supported for testing portability. One issue with
+relative paths is they can't be parsed unless the path already exists on the
+file system, so if trying to use it for a destination it's not going to work
+unless the destination already exists. If used, however, relative paths must
+begin with `./` or `../`, and paths are relative *to the job*.
 
 ### Options
 

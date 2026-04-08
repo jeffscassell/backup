@@ -17,30 +17,8 @@ BACKUPS_DIR="$SCRIPT_DIR/backups"
 LOG_FILE="$BACKUPS_DIR/backups.log"
 
 
-# Program
+# Helpers
 #########
-
-
-# $1=message
-error() {
-   local message="$1"
-   echo >&2
-   echo "$message" >&2  # To STDERR.
-}
-
-
-# $1=variable to check
-variableIsSet() {
-   local -n var="$1"
-   local literal="$1"
-
-   if [ -z "$var" ]; then
-      error "Variable unset: $literal"
-      return 1
-   fi
-
-   return 0
-}
 
 
 # $1=value; $2=array
@@ -78,6 +56,40 @@ arrayfilled() {
 
 # $1=command to check
 commandIsAvailable() { command -v "$1" &> /dev/null; }
+
+
+# $1=file; $2=suffix
+hasSuffix() {
+   local file="$1"
+   local suffix="$2"
+
+   if [ -z "$file" ] || [ -z "$suffix" ]; then return 1; fi
+
+   echo "$file" | grep -q -E "^.*""$suffix""$"
+}
+
+
+# $1=relative path; $2=job
+getAbsolute() {
+   local relative="$1"
+   local job="$2"
+   local resolved
+
+   if [ -z "$relative" ] || [ -z "$job" ]; then
+      return 1
+   fi
+
+   jobDirectory="$(cd -- "$(dirname -- "$job")" &> /dev/null && pwd)"
+
+   # Resolve any dots (../..).
+   resolved="$(readlink -f "$jobDirectory/$relative")"
+
+   echo "$resolved"
+}
+
+
+# Program
+#########
 
 
 printUsage() {
@@ -164,29 +176,18 @@ log() {
    fi
 
    if [ -z "$LOG_FILE" ]; then
-      error "LOG_FILE not set"
+      echo "LOG_FILE not set" >&2
       return 1
    fi
 
    local logDirectory="$(dirname "$LOG_FILE")"
 
    if [ ! -d "$logDirectory" ]; then
-      error "Log directory does not exist: $logDirectory"
+      echo "Log directory does not exist: $logDirectory" >&2
       return 1
    fi
 
    echo "$entry" >> "$LOG_FILE"
-}
-
-
-# $1=file; $2=suffix
-hasSuffix() {
-   local file="$1"
-   local suffix="$2"
-
-   if [ -z "$file" ] || [ -z "$suffix" ]; then return 1; fi
-
-   echo "$file" | grep -q -E "^.*""$suffix""$"
 }
 
 
@@ -210,7 +211,7 @@ getJobName() {
    local name="$(basename "$filename" "$JOB_SUFFIX")"  # job
 
    [ -z "$path" ] && return 1
-   ! variableIsSet JOB_SUFFIX && return 1
+   [ -z "$JOB_SUFFIX" ] && return 1
    ! hasJobSuffix "$filename" && return 1
 
    echo "$name"
@@ -259,12 +260,22 @@ getDestination() {
    fi
 
    while read line || [ -n "$line" ]; do
-      key="${line%%=*}"
-      value="${line##*=}"
-      
-      if [ "${key,,}" = "destination" ]; then
-         destination="$value"
+
+      # Discard lines that don't have "destination=" in it.
+      ! $(echo "$line" | grep -q "destination=") && continue 
+
+      value="${line##destination=}"
+      value="${value%%#*}"  # Remove comments.
+      value="$(echo "$value" | sed "s/\"//g")"  # Remove any quotes.
+
+      # Remove leading/trailing whitespace.
+      value="$(echo "$value" | sed "s/^[[:space:]]*//; s/[[:space:]]*$//")"
+
+      if [ "${value:0:3}" = "../" ] || [ "${value:0:2}" = "./" ]; then
+         value="$(getAbsolute "$value" "$job")"
       fi
+      
+      [ -n "$value" ] && destination="$value"
    done < "$job"
 
    # Use default if none was set in job, if BACKUPS_DIR set.
@@ -309,8 +320,18 @@ getObjects() {
    fi
 
    while read line || [ -n "$line" ]; do
+
+      line="${line%%#*}"  # Remove comments.
+      [ -z "$line" ] && continue  # Discard empty lines.
+      (echo "$line" | grep -q "=") && continue  # Discard lines with "=".
+
       # Filter any quotes that might exist.
       line="$(echo "$line" | sed "s/\"//g")"
+
+      # Convert relative paths to absolute (relative to job directory).
+      if [ "${line:0:3}" = "../" ] || [ "${line:0:2}" = "./" ]; then
+         line="$(getAbsolute "$line" "$job")"
+      fi
 
       if [ -e "$line" ]; then
          objects["$line"]=1  # Assigning this way prevents duplicates.
@@ -318,11 +339,7 @@ getObjects() {
       fi
    done < "$job"
    
-   if [ $status = 1 ]; then
-      log "Job contained no valid objects: $job" "$jobName" fail
-      return 1
-   fi
-
+   [ $status = 1 ] && return 1
    printf "%s\n" "${!objects[@]}"
 }
 
@@ -425,10 +442,10 @@ cleanupBackups() {
    log "Removing oldest backup: $oldestBackup" "$jobName"
    
    if rm -rf "$oldestBackup"; then
-      log "Removed oldest backup: $oldestBackup" "$jobName"
+      log "Remove: OK" "$jobName"
       return 0
    else
-      log "Could not remove backup: $oldestBackup" "$jobName"
+      log "Remove: fail" "$jobName" fail
       return 1
    fi
 }
@@ -479,6 +496,7 @@ backupObject() {
       log "Created destination directory: $destination" "$jobName"
    fi
 
+   log "Backing up: $datedBackupName"
    $backupCommand "$object" "${destination}/${datedBackupName}" || return 1
    return 0
 }
@@ -524,7 +542,7 @@ backupJob() {
    readarray -t objects < <(getObjects "$job" "$jobName")
 
    if ! arrayfilled objects; then
-      log "No valid objects exist" "$jobName" fail
+      log "Job had no valid objects" "$jobName" fail
       return 1
    fi
 
@@ -532,7 +550,7 @@ backupJob() {
 
    for object in "${objects[@]}"; do
 
-      log "Backing up: $object" "$jobName"
+      log "Processing object: $object" "$jobName"
       
       if backupObject "$object" "$destination" "$jobName"; then
          log "Backup: OK" "$jobName"
@@ -564,27 +582,24 @@ getJobs() {
    local job
 
    if [ -z "$JOB_SUFFIX" ]; then
-      log "JOB_SUFFIX not set, can't parse directory: $directory" "" fail
+      log "JOB_SUFFIX not set, can't parse directory" "" fail
       return 1
    fi
 
    if [ -z "$directory" ]; then
-      error "No directory argument for getJobs()"
+      log "No directory argument for getJobs()" "" fail
       return 1
    fi
 
    if [ ! -d "$directory" ]; then
-      error "Argument passed to getJobFiles() is not a directory: $directory"
+      log "Not a directory" "" fail
       return 1
    fi
 
    readarray -t jobs < <(find "$directory" -maxdepth 1 -type f \
       -name "*$JOB_SUFFIX")
    
-   if ! arrayfilled jobs; then
-      log "No jobs found in directory: $directory" "" fail
-      return 1
-   fi
+   ! arrayfilled jobs && return 1
 
    printf "%s\n" "${jobs[@]}"
    return 0
@@ -611,8 +626,15 @@ main() {
       if [ -f "$arg" ]; then
          jobs=("$arg")
       elif [ -d "$arg" ]; then
+         log "Finding jobs in: $arg"
          readarray -t jobs < <(getJobs "$arg")
+         
+         if ! arrayfilled jobs; then
+            log "No jobs found" "" fail
+            continue
+         fi
       fi
+
 
       for job in "${jobs[@]}"; do
 
@@ -651,32 +673,35 @@ readConfig() {
 
 
    if [ ! -f "$config" ]; then
-      error "Couldn't find config file: $config"
+      log "Couldn't find config file: $config" "" fail
       return 1
    fi
 
    if ! hasConfigSuffix "$config"; then
-      error "Config file needs .conf suffix: $config"
+      log "Config file needs .conf suffix: $config" "" fail
       return 1
    fi
 
    while read line || [ -n "$line" ]; do
-      trimmed="${line%%#*}"  # Remove comments.
+
+      # Discard lines that don't have "=" in it.
+      ! (echo "$line" | grep -q "=") && continue 
+
+      # Discard lines with no values.
+      [ -z "${line##*=}" ] && continue
+
+      line="${line%%#*}"  # Remove comments.
+      line="$(echo "$line" | sed "s/\"//g")"  # Remove any quotes.
 
       # Remove leading/trailing whitespace.
-      trimmed="$(echo "$trimmed" | sed "s/^[[:space:]]*//; s/[[:space:]]*$//")"
+      line="$(echo "$line" | sed "s/^[[:space:]]*//; s/[[:space:]]*$//")"
 
-      [ -z "$trimmed" ] && continue
-
-      key="${trimmed%%=*}"
-      value="${trimmed##*=}"
-      value="$(echo "$value" | sed "s/\"//g")"  # Remove any quotes.
-      
-      [ -z "$value" ] && continue
+      key="${line%%=*}"
+      value="${line##*=}"
 
       if isConfigOption "$key"; then
          eval $key="\$value"
-         log "Loaded from config: $key=$value"
+         log "Loaded variable from config: $key=$value"
       fi
    done < "$config"
 
@@ -707,7 +732,7 @@ while [ $# -gt 0 ]; do
          shift 2
          ;;
       --jobs)
-         [ -z "$JOBS" ] && error "JOBS not set" && exit 1
+         [ -z "$JOBS" ] && log "JOBS not set" "" fail && exit 1
 
          main "$JOBS"
          shift 1

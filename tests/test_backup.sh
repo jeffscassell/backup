@@ -129,6 +129,11 @@ test_getObjects() {
    assert $(objectsSize) = 0
    assert ! getObjects "$job"
 
+   # Object is a relative path.
+   job="$directory/relative.backup"
+   assert $(objectsSize) = 2
+   assert getObjects "$job"
+
    # JOB_SUFFIX not set: return nothing.
    local JOB_SUFFIX=
    job="$directory/single space.backup"
@@ -213,6 +218,26 @@ test_getDestination() {
    # Destination is the *ONLY* line in the job (no newline): return destination.
    job="$directory/single_line.backup"
    assert "$(getDestination "$job")" = "$directory/single_line"
+   assert getDestination "$job"
+
+   # Destination has quotes.
+   job="$directory/quotes.backup"
+   assert "$(getDestination "$job")" = "$directory/quotes"
+   assert getDestination "$job"
+
+   # Destination has spaces.
+   job="$directory/has_space.backup"
+   assert "$(getDestination "$job")" = "$directory/has space"
+   assert getDestination "$job"
+
+   # Destination has spaces and quotes.
+   job="$directory/space_and_quotes.backup"
+   assert "$(getDestination "$job")" = "$directory/space and quotes"
+   assert getDestination "$job"
+
+   # Destination is a relative path.
+   job="$directory/relative.backup"
+   assert "$(getDestination "$job")" = "$RESOURCES/_known_good/relative"
    assert getDestination "$job"
 }
 
