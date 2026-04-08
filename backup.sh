@@ -2,44 +2,19 @@
 # Jeff Cassell
 # 2026MAR22
 
-# Backup
-#
-# Meant to be used with smaller job files (.backup) that contain objects
-# (files/directories) that need to be backed up. Objects should be full paths.
-#
-# Running with "run" option will gather all jobs in the JOBS directory and
-# process them. Running with specific job file(s) will only process those
-# jobs.
-#
-# [Examples]
-# bash backup.sh run
-# backup.sh run
-# bash backup.sh sample_1.backup sample_2.backup
-#
-#
-# --- Sample Job File ---
-# [jellyfin.backup]
-# /server/config
-# /server/cache
-# 
-# # Optional.
-# #destination=/override/the/default/JOBS/directory
-#
-# --- Sample Backup ---
-# [backups/jellyfin]
-# 2026-03-23_config.old
-# 2026-03-23_cache.old
+# Backup.sh
 
 
 # Configuration
 ###############
 
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE}")" &> /dev/null && pwd )"
-LOG_LOCATION=/f/.backup/programming/bash/backup/backups.log
-JOBS="$SCRIPT_DIR"
+JOBS="$SCRIPT_DIR/jobs"
 JOB_SUFFIX=.backup
 BACKUPS_LIMIT=2
-BACKUPS_DESTINATION=/f/.backup/programming/bash/backup/backups
+BACKUPS_DESTINATION="$SCRIPT_DIR/backups"
+LOG_FILE="$BACKUPS_DESTINATION/backups.log"
 
 
 # Program
@@ -95,12 +70,12 @@ commandIsAvailable() { command -v "$1" &> /dev/null; }
 # If any argument for status is supplied, the status is overridden to indicate
 # an error occurred. Treat it as a boolean for error.
 #
-# LOG_LOCATION is required to be set.
+# LOG_FILE is required to be set.
 log() {
    [ -n "$1" ] || return
-   variableIsSet LOG_LOCATION || return
+   variableIsSet LOG_FILE || return
 
-   local logDirectory=$(dirname "$LOG_LOCATION")
+   local logDirectory=$(dirname "$LOG_FILE")
    if [ ! -d "$logDirectory" ]; then
       echo "Log directory does not exist: $logDirectory" >&2  # To STDERR.
       return 1
@@ -115,7 +90,7 @@ log() {
    local status="${3:+$ERROR}"  # If anything supplied, $ERROR overrides.
    status="${status:-$OK}"  # If empty ("else" above), $OK variable is used.
 
-   echo "$timestamp $status: ($job) $message" >> "$LOG_LOCATION"
+   echo "$timestamp $status: ($job) $message" >> "$LOG_FILE"
 }
 
 
@@ -518,16 +493,15 @@ main() {
 
 
 readConfig() {
-   local default="$SCRIPT_DIR/backup.conf"
-   local config="${1:-"$default"}"
-   local key value
+   local config="$1"
+   local key value trimmed line
    
 
    # $1=option
    isConfigOption() {
       local option="$1"
       local variable
-      local VARIABLES=("LOG_LOCATION" "JOBS" "JOB_SUFFIX" "BACKUPS_LIMIT" \
+      local VARIABLES=("LOG_FILE" "JOBS" "JOB_SUFFIX" "BACKUPS_LIMIT" \
          "BACKUPS_DESTINATION")
 
       for variable in "${VARIABLES[@]}"; do
@@ -544,18 +518,24 @@ readConfig() {
    fi
 
    while read line; do
-      key="${line%%=*}"
-      value="${line##*=}"
+      trimmed="${line%%#*}"  # Remove comments.
+
+      # Remove leading/trailing whitespace.
+      trimmed="$(echo "$trimmed" | sed "s/^[[:space:]]*//; s/[[:space:]]*$//")"
+
+      [ -z "$trimmed" ] && continue
+
+      key="${trimmed%%=*}"
+      value="${trimmed##*=}"
+      value="$(echo "$value" | sed "s/\"//g")"  # Remove any quotes.
+      
+      [ -z "$value" ] && continue
 
       if isConfigOption "$key"; then
-         [ -z "$value" ] && continue
-
-         echo "eval'd: $key=$value"
-         eval "$key=$value"
+         eval $key="\$value"
+         # eval "echo processed $key: \$$key"  # For debugging.
       fi
    done < "$config"
-
-   echo "LOG_LOCATION: $LOG_LOCATION"
 }
 
 

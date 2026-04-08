@@ -8,26 +8,26 @@
 RESOURCES="/f/.backup/programming/bash/backup/tests/_resources"
 
 # Module config.
-LOG_LOCATION=  # Disable logging.
+LOG_FILE=  # Disable logging.
 
 
 # Tests
 #######
 
 test_log() {
-   local LOG_LOCATION="$RESOURCES/log/backups.log"
+   local LOG_FILE="$RESOURCES/log/backups.log"
    
-   [ ! -f "$LOG_LOCATION" ] || rm "$LOG_LOCATION"
-   assert ! -e "$LOG_LOCATION"
+   [ ! -f "$LOG_FILE" ] || rm "$LOG_FILE"
+   assert ! -e "$LOG_FILE"
 
    assert ! log
    assert log "pass message 1" "assert_test"
 
    assert log "error message" "assert_test" fail
-   assert -n "$(tail -1 "$LOG_LOCATION" | grep "[ERROR]")"
+   assert -n "$(tail -1 "$LOG_FILE" | grep "[ERROR]")"
 
-   [ -f "$LOG_LOCATION" ] && rm "$LOG_LOCATION"
-   LOG_LOCATION=""
+   [ -f "$LOG_FILE" ] && rm "$LOG_FILE"
+   LOG_FILE=""
    assert ! log "fail message 1" "assert_test"
 }
 
@@ -251,11 +251,6 @@ test_getBackups() {
 }
 
 
-test_readConfig() {
-   echo
-}
-
-
 test_cleanupBackups() {
    local directory="$RESOURCES/cleanup_backups"
    local destination="$directory/destination"
@@ -409,4 +404,72 @@ test_backupJob() {
    job="$directory/fake.backup"
    assert ! -f "$job"
    assert ! backupJob "$job"
+}
+
+
+test_readConfig() {
+   local directory="$RESOURCES/read_config"
+   local config
+   local JOBS JOBS_SUFFIX LOG_FILE BACKUPS_LIMIT BACKUPS_DESTINATION
+
+   # Config doesn't exist: fail.
+   config="$directory/fake.conf"
+   assert ! readConfig "$config"
+
+   # Config has invalid variables: ignore and continue.
+   config="$directory/has_invalid.conf"
+   readConfig "$config"
+   assert "$BACKUPS_LIMIT" = 5
+   assert -z "$invalid"
+   BACKUPS_LIMIT=
+
+   # Config has whole-line comments: ignore line and continue.
+   config="$directory/whole_line_comment.conf"
+   readConfig "$config"
+   assert "$BACKUPS_LIMIT" = 5
+   BACKUPS_LIMIT=
+
+   # Config has comments after values: ignore comment portion and parse.
+   config="$directory/partial_line_comment.conf"
+   readConfig "$config"
+   assert "$BACKUPS_LIMIT" = 5
+   BACKUPS_LIMIT=
+   assert "$LOG_FILE" = "/log/file.log"
+   LOG_FILE=
+
+   # Value has spaces in it with no quotes.
+   config="$directory/spaces_no_quotes.conf"
+   readConfig "$config"
+   assert "$BACKUPS_DESTINATION" = "/backups/directory with/double  spaces"
+   BACKUPS_DESTINATION=
+   assert "$BACKUPS_LIMIT" = 5
+   BACKUPS_LIMIT=
+
+   # Value has spaces with quotes around it.
+   config="$directory/spaces_with_quotes.conf"
+   readConfig "$config"
+   assert "$BACKUPS_DESTINATION" = "/backups/directory with/double  spaces"
+   BACKUPS_DESTINATION=
+   assert "$BACKUPS_LIMIT" = 5
+   BACKUPS_LIMIT=
+
+   # Key is listed twice: use the last value.
+   config="$directory/duplicate.conf"
+   readConfig "$config"
+   assert "$BACKUPS_LIMIT" = 5
+   BACKUPS_LIMIT=
+
+   # Config is empty: OK.
+   config="$directory/empty.conf"
+   readConfig "$config"
+
+   # Normal config with several keys, set values, comments, etc.
+   config="$directory/normal.conf"
+   readConfig "$config"
+   assert "$JOBS" = "/jobs/directory"
+   assert "$JOB_SUFFIX" = ".else"
+   assert "$LOG_FILE" = "/log/file.log"
+   assert "$BACKUPS_DESTINATION" = "/backups/directory with/double  spaces"
+   assert "$BACKUPS_LIMIT" = 5
+   assert -z "$invalid"
 }
