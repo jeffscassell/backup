@@ -65,10 +65,22 @@ test_getObjects() {
    assert $(arraysize objects) = 1
    assert getObjects "$job"
 
+   # Object has quotes.
+   job="$directory/quotes.backup"
+   readarray -t objects < <(getObjects "$job")
+   assert $(arraysize objects) = 1
+   assert getObjects "$job"
+
    # Job contains multiple real files and directories.
    job="$directory/multiple.backup"
    readarray -t objects < <(getObjects "$job")
    assert $(arraysize objects) = 4
+   assert getObjects "$job"
+
+   # Duplicate objects: return only unique objects.
+   job="$directory/duplicates.backup"
+   readarray -t objects < <(getObjects "$job")
+   assert $(arraysize objects) = 1
    assert getObjects "$job"
 
    # Job specifies a destination: return only objects.
@@ -120,46 +132,35 @@ test_getJobs() {
    local -a jobs
    local directory
 
-   # JOBS variable not set and no specified directory.
-   local JOBS=
-   readarray -t jobs < <(getJobs)
-   assert $(arraysize jobs) = 0
-   assert ! getJobs
-
-   # JOBS variable is set, no specified directory.
-   JOBS="$RESOURCES/get_jobs"
-   readarray -t jobs < <(getJobs)
-   assert ${#jobs[@]} = 3
-   assert getJobs
-
-   # Get jobs from a specified directory instead of JOBS variable.
-   directory="$RESOURCES/_known_good"
+   # Directory contains no jobs.
+   directory="$RESOURCES/_backup_destination"
    readarray -t jobs < <(getJobs "$directory")
-   assert $(arraysize jobs) = 1
-   assert getJobs "$directory"
+   assert ! getJobs "$directory"
+   assert $(arraysize jobs) = 0
    
    # Specified directory doesn't exist.
    directory="/a/directory"
    readarray -t jobs < <(getJobs "$directory")
-   assert $(arraysize jobs) = 0
    assert ! getJobs "$directory"
+   assert $(arraysize jobs) = 0
 
-   # Directory contains no jobs.
-   directory="$RESOURCES/_backup_destination"
+   # Normal functioning.
+   directory="$RESOURCES/get_jobs"
    readarray -t jobs < <(getJobs "$directory")
-   assert $(arraysize jobs) = 0
-   assert ! getJobs "$directory"
+   assert getJobs "$directory"
+   assert $(arraysize jobs) = 3
 
    # Job suffix is changed from default .backup.
    local JOB_SUFFIX=.else
-   readarray -t jobs < <(getJobs)
+   readarray -t jobs < <(getJobs "$directory")
+   assert getJobs "$directory"
    assert ${#jobs[@]} = 2
 
    # Job suffix not set.
-   local JOB_SUFFIX=
-   readarray -t jobs < <(getJobs)
+   JOB_SUFFIX=
+   readarray -t jobs < <(getJobs "$directory")
+   assert ! getJobs "$directory"
    assert $(arraysize jobs) = 0
-   assert ! getJobs
 }
 
 
@@ -315,7 +316,10 @@ test_backupObject() {
    local object backupName
    local -a backups
 
+   [ -d "$destination" ] && rm -rf "$destination"
+
    # Object file exists and destination exist: backup.
+   mkdir "$destination"
    object="$directory/foo.txt"
    backupName="$(getBackupName "$object")"
    assert "$backupName" = foo.txt.old

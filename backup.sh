@@ -63,6 +63,53 @@ arrayfilled() {
 commandIsAvailable() { command -v "$1" &> /dev/null; }
 
 
+printUsage() {
+   echo
+   cat << EOF
+[ Backup.sh ]
+
+Meant to be used with smaller `job` files (.backup) that contain `objects`
+(files/directories) that need to be backed up. Objects should be full paths.
+
+[ Job Files ]
+
+A `job` file can contain directories and files, and can specify an optional
+`destination` variable to override the default backups directory. For a `job`
+named `job_name.backup`, the default backup directory is
+`$BACKUPS_DIRECTORY/job_name`. This directory will contain backups of all
+the objects specified in the `job`, dated but not timestamped like so:
+`2026-01-01_object_file.txt.old`.
+
+[ Options ]
+
+Running with `--jobs` option will gather all jobs in the `JOBS` directory and
+process them. Running with only `job` file(s) will only process those
+jobs. Running with a directory will search that directory for `job` files and
+process them if found. All can be used together, but `--jobs` (and all options)
+should come first. `-c` or `--config` followed by a configuration file will use
+that configuration file to override the default configuration values for `JOBS`,
+`LOG_FILE`, etc.
+
+[ Examples ]
+
+# Run all jobs in the JOBS directory.
+backup.sh --jobs
+
+# Find jobs in a directory and run them.
+backup.sh jobs_directory
+
+# Run only the specified jobs.
+backup.sh job_1.backup job_2.backup
+
+# Run with a user-customized config.
+backup.sh -c "backup.conf" job.backup
+
+# Lots of options and jobs together.
+backup.sh -c backup.conf --run jobs_directory job_1.backup job_2.backup
+EOF
+}
+
+
 # $1=message; $2=associated job/process/etc (optional); $3=status (optional)
 #
 # Requires at least the first argument (a message), with an optional
@@ -94,10 +141,23 @@ log() {
 }
 
 
-# $1=job
-isValidJob() {
-   echo "$1" | grep -q -E "^.*""$JOB_SUFFIX""$"
+# $1=file; $2=suffix
+hasSuffix() {
+   local file="$1"
+   local suffix="$2"
+
+   if [ -z "$file" ] || [ -z "$suffix" ]; then return 1; fi
+
+   echo "$file" | grep -q -E "^.*""$suffix""$"
 }
+
+
+# $1=job
+hasJobSuffix() { hasSuffix "$1" "$JOB_SUFFIX"; }
+
+
+# $1=config
+hasConfigSuffix(){ hasSuffix "$1" ".conf"; }
 
 
 # $1=job file
@@ -116,7 +176,7 @@ getJobName() {
       return 1
    fi
 
-   if ! isValidJob "$filename"; then
+   if ! hasJobSuffix "$filename"; then
       echo
       return 1
    fi
@@ -154,7 +214,7 @@ getDestination() {
    local destination key value
    local jobName="$(getJobName "$job")"
 
-   if ! isValidJob "$job"; then
+   if ! hasJobSuffix "$job"; then
       log "Not a valid job: $job" "$jobName" fail
       echo
       return 1
@@ -202,6 +262,7 @@ getObjects() {
    local job="$1"
    local status=1
    local jobName="$(getJobName "$job")"
+   local -A objects
 
    if [ ! -f "$job" ]; then
       log "Job file doesn't exist: $job" "$jobName" fail
@@ -213,14 +274,17 @@ getObjects() {
       return 1
    fi
 
-   if ! isValidJob "$job"; then
+   if ! hasJobSuffix "$job"; then
       log "File suffix does not match JOB_SUFFIX: $job" "$jobName" fail
       return 1
    fi
 
    while read line; do
+      # Filter any quotes that might exist.
+      line="$(echo "$line" | sed "s/\"//g")"
+
       if [ -e "$line" ]; then
-         echo "$line"
+         objects["$line"]=1  # Assigning this way prevents duplicates.
          status=0
       fi
    done < "$job"
@@ -229,6 +293,8 @@ getObjects() {
       log "Job contained no valid objects: $job" "$jobName" fail
       return $status
    fi
+
+   printf "%s\n" "${!objects[@]}"
 
    return $status
 }
@@ -397,6 +463,11 @@ backupJob() {
       return 1
    fi
 
+   if ! hasJobSuffix "$job"; then
+      log "backupJob(): job file has wrong suffix: $job" "" fail
+      return 1
+   fi
+
    # Used for storage subdirectory (if JOBS directory used) and logging.
    jobName="$(getJobName "$job")"
    if [ -z "$jobName" ]; then
@@ -428,14 +499,14 @@ backupJob() {
 }
 
 
-# $1=jobs directory (optional)
+# $1=directory containing jobs
 #
 # Find job files (.backup) within a directory. Does not recurse into
 # subdirectories.
 #
 # JOB_SUFFIX must be set.
 getJobs() {
-   local directory="${1-$JOBS}"
+   local directory="$1"
    local -a jobs
    local job
 
@@ -445,7 +516,7 @@ getJobs() {
    fi
 
    if [ -z "$directory" ]; then
-      error "No directory argument or JOBS variable set for getJobs()"
+      error "No directory argument for getJobs()"
       return 1
    fi
 
@@ -467,27 +538,32 @@ getJobs() {
 }
 
 
-# $1=backup file(s) (optional)
+# $1=files or directories
 main() {
-   local job
-   local -a jobs
+   local arg job
+   local -a args jobs
 
-   # If job file(s) are passed explicitly, prefer those.
-   if [ -n "$1" ]; then
-      jobs=("$@")
+   [ $# = 0 ] && printUsage
+
+   args=("$@")
+   for arg in "${args[@]}"; do
+      
+      if [ ! -e "$arg" ]; then
+         log "Could not find: $arg" "" fail
+         continue
+      fi
+   done
+
+   for arg in "${args[@]}"; do
+      if [ -f "$arg" ]; then
+         jobs=("$arg")
+      elif [ -d "$arg"]; then
+         readarray -t jobs < <(getJobs "$arg")
+      fi
+
       for job in "${jobs[@]}"; do
-         
-         if [ ! -f "$job" ]; then
-            log "Could not find file: $job" "" fail
-            continue
-         fi
+         backupJob "$job"
       done
-   else
-      readarray -t jobs < <(getJobs)
-   fi
-
-   for job in "${jobs[@]}"; do
-      backupJob "$job"
    done
 }
 
@@ -513,7 +589,12 @@ readConfig() {
 
 
    if [ ! -f "$config" ]; then
-      error "Couldn't find config: $config"
+      error "Couldn't find config file: $config"
+      return 1
+   fi
+
+   if ! hasConfigSuffix "$config"; then
+      error "Config file needs .conf suffix: $config"
       return 1
    fi
 
@@ -541,13 +622,19 @@ readConfig() {
 
 while [ $# -gt 0 ]; do
    case "$1" in
-      -c)
+      -h|--help)
+         printUsage
+         exit 0
+         ;;
+      -c|--config)
          readConfig "$2"
          shift 2
          ;;
-      run)
-         main
-         exit
+      --jobs)
+         [ -z "$JOBS" ] && error "JOBS not set" && exit 1
+
+         main "$JOBS"
+         shift 1
          ;;
       *)
          main "$@"
