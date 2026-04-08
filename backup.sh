@@ -66,46 +66,56 @@ commandIsAvailable() { command -v "$1" &> /dev/null; }
 printUsage() {
    echo
    cat << EOF
-[ Backup.sh ]
 
-Meant to be used with smaller `job` files (.backup) that contain `objects`
-(files/directories) that need to be backed up. Objects should be full paths.
+NAME
+   Backup.sh
 
-[ Job Files ]
+SYNOPSIS
+   backup.sh [OPTION...] [FILE...]
 
-A `job` file can contain directories and files, and can specify an optional
-`destination` variable to override the default backups directory. For a `job`
-named `job_name.backup`, the default backup directory is
-`$BACKUPS_DIRECTORY/job_name`. This directory will contain backups of all
-the objects specified in the `job`, dated but not timestamped like so:
-`2026-01-01_object_file.txt.old`.
+DESCRIPTION
+   Meant to be used with smaller `job` files (.backup) that contain `objects`
+   (files/directories) that need to be backed up. Objects should be full paths.
+   Multipls files and directories can be used at the same time, they will be
+   processed in order. Directories will be searched for job files,
+   non-recursively. The `--jobs` option does not conflict with these other
+   job files.
 
-[ Options ]
+   A `job` file can contain directories and files, and can specify an optional
+   `destination` variable to override the default backups directory. For a `job`
+   named `job_name.backup`, the default backup directory is
+   `$BACKUPS_DIR/job_name`. This directory will contain backups of all
+   the objects specified in the `job`, dated but not timestamped like so:
+   `2026-01-01_object_file.txt.old`.
 
-Running with `--jobs` option will gather all jobs in the `JOBS` directory and
-process them. Running with only `job` file(s) will only process those
-jobs. Running with a directory will search that directory for `job` files and
-process them if found. All can be used together, but `--jobs` (and all options)
-should come first. `-c` or `--config` followed by a configuration file will use
-that configuration file to override the default configuration values for `JOBS`,
-`LOG_FILE`, etc.
+OPTIONS
+   -c, --config <file.conf>
+      Use the specified configuration file to override the script's defaults for
+      JOBS, JOB_SUFFIX, BACKUPS_LIMIT, BACKUPS_DIR, and/or LOG_FILE.
 
-[ Examples ]
+   -h, --help
+      This help message.
+   
+   --jobs
+      Run all job files in the JOBS directory. Can be used while also specifying
+      other job files/directories.
 
-# Run all jobs in the JOBS directory.
-backup.sh --jobs
+EXAMPLES
+   # Run all jobs in the JOBS directory.
+   backup.sh --jobs
 
-# Find jobs in a directory and run them.
-backup.sh jobs_directory
+   # Find jobs in a directory and run them.
+   backup.sh jobs_directory
 
-# Run only the specified jobs.
-backup.sh job_1.backup job_2.backup
+   # Run only the specified jobs.
+   backup.sh job_1.backup job_2.backup
 
-# Run with a user-customized config.
-backup.sh -c "backup.conf" job.backup
+   # Run with a user-customized config.
+   backup.sh -c "backup.conf" job.backup
 
-# Lots of options and jobs together.
-backup.sh -c backup.conf --run jobs_directory job_1.backup job_2.backup
+   # Lots of options and jobs together.
+   backup.sh -c backup.conf --run jobs_directory job_1.backup job_2.backup
+
 EOF
 }
 
@@ -632,15 +642,3 @@ while [ $# -gt 0 ]; do
          ;;
    esac
 done
-
-# # Run all .backup files found in BACKUPS_SRC directory.
-# if [ "$1" = "run" ]; then
-#    main
-#    exit
-# fi
-
-# # Run specific .backup file(s).
-# if [ -n "$1" ]; then
-#    main "$@"
-#    exit
-# fi
