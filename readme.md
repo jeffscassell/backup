@@ -103,7 +103,7 @@ destination="/customized/directory/for/jellyfin"
 >
 > **Default:** 2
 
-### *BACKUPS_DESTINATION*
+### *BACKUPS_DIR*
 
 >> Directory
 >

@@ -166,24 +166,17 @@ test_getJobs() {
 
 test_getDestination() {
    local directory="$RESOURCES/get_destination"
-   local BACKUPS_DESTINATION="$directory/default dir"
+   local BACKUPS_DIR="$RESOURCES/_backup_destination"
    local job destination
 
-   # Job file has a real destination provided.
-   job="$directory/has_destination.backup"
-   assert "$(getDestination "$job")" = "$directory/override dir"
-   assert getDestination "$job"
-   
    # Job file does not have a destination provided: use default.
    job="$directory/no_destination.backup"
-   destination="$BACKUPS_DESTINATION/no_destination"
-   assert "$(getDestination "$job")" = "$destination"
+   assert "$(getDestination "$job")" = "$BACKUPS_DIR/no_destination"
    assert getDestination "$job"
 
    # Destination in job doesn't exist: return anyway.
    job="$directory/fake_destination.backup"
-   destination="$RESOURCES/fake/destination"
-   assert "$(getDestination "$job")" = "$destination"
+   assert "$(getDestination "$job")" = "$directory/fake_destination"
    assert getDestination "$job"
    
    # Job file has wrong suffix: return empty.
@@ -196,17 +189,22 @@ test_getDestination() {
    assert -z "$(getDestination "$job")"
    assert ! getDestination "$job"
 
-   # Has multiple destinations: only use the first.
+   # Has multiple destinations: only use the last.
    job="$directory/multiple_destination.backup"
-   assert "$(getDestination "$job")" = "$directory/override dir"
+   assert "$(getDestination "$job")" = "$directory/multiple_destination"
    assert getDestination "$job"
 
-   # Default BACKUPS_DESTINATION variable isn't set, and no destination in job:
+   # Default BACKUPS_DIR variable isn't set, and no destination in job:
    # return empty.
-   BACKUPS_DESTINATION=
+   BACKUPS_DIR=
    job="$directory/no_destination.backup"
    assert -z "$(getDestination "$job")"
    assert ! getDestination "$job"
+
+   # Destination is the *ONLY* line in the job (no newline): return destination.
+   job="$directory/single_line.backup"
+   assert "$(getDestination "$job")" = "$directory/single_line"
+   assert getDestination "$job"
 }
 
 
@@ -255,44 +253,63 @@ test_getBackups() {
 test_cleanupBackups() {
    local directory="$RESOURCES/cleanup_backups"
    local destination="$directory/destination"
-   local BACKUPS_LIMIT=3
+   local BACKUPS_LIMIT=1
    local -a backups
    local object="$directory/foo.txt"
    local backupName="$(getBackupName "$object")"
 
+
+   backupsSize(){
+      local -a backups
+      readarray -t backups < <(getBackups "$destination" "$backupName")
+      echo "$(arraysize backups)"
+   }
+
+   makeBackups(){
+      local count="$1"
+      local year
+      local -a backups
+
+      readarray -t backups < <(getBackups "$destination" "$backupName")
+      year="${backups[0]}"
+      year="${year##*/}"
+      year="${year%%-*}"
+      [ -n "$year" ] && (( year++ ))
+      [ -z "$year" ] && year=2000
+
+      while [ "$count" -gt 0 ]; do
+         (cd "$destination" && touch "$year"-01-01_"$backupName")
+         (( count-- ))
+         (( year++ ))
+      done
+   }
+
+
    # Backups are within limit.
    rm "$destination"/*
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 0
-   assert backupObject "$object" "$destination"
-   (cd "$destination" && touch 202{2,3}-01-01_"$backupName")
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 3
+   makeBackups 1
+   assert $(backupsSize) = 1
    assert cleanupBackups "$destination" "$backupName"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 3
+   assert $(backupsSize) = 1
+
 
    # Backups exceed limit by more than 5: remove 5 oldest backups. Because there
    # are still more that might need to be removed, return failure.
-   (cd "$destination" && touch 201{0..5}-01-01_"$backupName")
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 9
+   makeBackups 7
+   assert $(backupsSize) = 8
    assert ! cleanupBackups "$destination" "$backupName"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 4
+   assert $(backupsSize) = 3
 
    # Backups exceed limit by less than 5: remove oldest until within limit.
-   BACKUPS_LIMIT=1
    assert cleanupBackups "$destination" "$backupName"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
+   assert $(backupsSize) = 1
 
    # Missing BACKUPS_LIMIT: fail.
    BACKUPS_LIMIT=
-   (cd "$destination" && touch 202{2,3}-01-01_"$backupName")
+   makeBackups 2
+   assert $(backupsSize) = 3
    assert ! cleanupBackups "$destination" "$backupName"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 3
+   assert $(backupsSize) = 3
 
    # Missing destination: fail.
    assert ! cleanupBackups "" "$backupName"
@@ -300,13 +317,11 @@ test_cleanupBackups() {
    # Destination doesn't exist: fail.
    local fake="$directory/fake"
    assert ! cleanupBackups "$fake" "$backupName"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 3
+   assert $(backupsSize) = 3
 
    # Missing backup name: fail.
    assert ! cleanupBackups "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 3
+   assert $(backupsSize) = 3
 }
 
 
@@ -316,50 +331,50 @@ test_backupObject() {
    local object backupName
    local -a backups
 
+
+   backupsSize(){
+      local -a backups
+      readarray -t backups < <(getBackups "$destination" "$backupName")
+      echo "$(arraysize backups)"
+   }
+
+
    [ -d "$destination" ] && rm -rf "$destination"
 
    # Object file exists and destination exist: backup.
    mkdir "$destination"
    object="$directory/foo.txt"
    backupName="$(getBackupName "$object")"
-   assert "$backupName" = foo.txt.old
    assert -d "$destination"
    assert -f "$object"
    assert backupObject "$object" "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
+   assert $(backupsSize) = 1
 
    # Object directory exists and destination exist: backup.
    object="$directory/bar"
    backupName="$(getBackupName "$object")"
-   assert "$backupName" = bar.old
    assert -d "$destination"
    assert -d "$object"
    assert backupObject "$object" "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
+   assert $(backupsSize) = 1
 
    # Object doesn't exist: fail.
    object="$directory/fake.txt"
    backupName="$(getBackupName "$object")"
-   assert "$backupName" = fake.txt.old
    assert -d "$destination"
    assert ! -e "$object"
    assert ! backupObject "$object" "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 0
+   assert $(backupsSize) = 0
 
    # Destination doesn't exist: create destination.
    [ -d "$destination" ] && rm -rf "$destination"
    object="$directory/foo.txt"
    backupName="$(getBackupName "$object")"
-   assert "$backupName" = foo.txt.old
    assert ! -d "$destination"
    assert -f "$object"
    assert backupObject "$object" "$destination"
    assert -d "$destination"
-   readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
+   assert $(backupsSize) = 1
 
    # Missing object argument: fail.
    assert ! backupObject "" "$destination"
@@ -414,7 +429,7 @@ test_backupJob() {
 test_readConfig() {
    local directory="$RESOURCES/read_config"
    local config
-   local JOBS JOBS_SUFFIX LOG_FILE BACKUPS_LIMIT BACKUPS_DESTINATION
+   local JOBS JOBS_SUFFIX LOG_FILE BACKUPS_LIMIT BACKUPS_DIR
 
    # Config doesn't exist: fail.
    config="$directory/fake.conf"
@@ -444,16 +459,16 @@ test_readConfig() {
    # Value has spaces in it with no quotes.
    config="$directory/spaces_no_quotes.conf"
    readConfig "$config"
-   assert "$BACKUPS_DESTINATION" = "/backups/directory with/double  spaces"
-   BACKUPS_DESTINATION=
+   assert "$BACKUPS_DIR" = "/backups/directory with/double  spaces"
+   BACKUPS_DIR=
    assert "$BACKUPS_LIMIT" = 5
    BACKUPS_LIMIT=
 
    # Value has spaces with quotes around it.
    config="$directory/spaces_with_quotes.conf"
    readConfig "$config"
-   assert "$BACKUPS_DESTINATION" = "/backups/directory with/double  spaces"
-   BACKUPS_DESTINATION=
+   assert "$BACKUPS_DIR" = "/backups/directory with/double  spaces"
+   BACKUPS_DIR=
    assert "$BACKUPS_LIMIT" = 5
    BACKUPS_LIMIT=
 
@@ -473,7 +488,7 @@ test_readConfig() {
    assert "$JOBS" = "/jobs/directory"
    assert "$JOB_SUFFIX" = ".else"
    assert "$LOG_FILE" = "/log/file.log"
-   assert "$BACKUPS_DESTINATION" = "/backups/directory with/double  spaces"
+   assert "$BACKUPS_DIR" = "/backups/directory with/double  spaces"
    assert "$BACKUPS_LIMIT" = 5
    assert -z "$invalid"
 }

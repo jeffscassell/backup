@@ -1,5 +1,0 @@
-/f/.backup/programming/bash/backup/tests/_resources/valid_objects/fake.file
-/f/.backup/programming/bash/backup/tests/_resources/valid_objects/foo.txt
-/f/.backup/programming/bash/backup/tests/_resources/valid_objects/bar
-
-destination=/some/directory/that/overrides/default

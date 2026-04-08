@@ -1,0 +1,5 @@
+/f/.backup/programming/bash/backup/tests/_resources/_known_good/fake.file
+/f/.backup/programming/bash/backup/tests/_resources/_known_good/foo.txt
+/f/.backup/programming/bash/backup/tests/_resources/_known_good/bar
+
+destination=/f/.backup/programming/bash/backup/tests/_resources/_backup_destination

@@ -13,8 +13,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE}")" &> /dev/null && pwd )"
 JOBS="$SCRIPT_DIR/jobs"
 JOB_SUFFIX=.backup
 BACKUPS_LIMIT=2
-BACKUPS_DESTINATION="$SCRIPT_DIR/backups"
-LOG_FILE="$BACKUPS_DESTINATION/backups.log"
+BACKUPS_DIR="$SCRIPT_DIR/backups"
+LOG_FILE="$BACKUPS_DIR/backups.log"
 
 
 # Program
@@ -171,15 +171,9 @@ getJobName() {
    local filename="$(basename "$path")"  # job.backup
    local name="$(basename "$filename" "$JOB_SUFFIX")"  # job
 
-   if ! variableIsSet JOB_SUFFIX; then
-      echo
-      return 1
-   fi
-
-   if ! hasJobSuffix "$filename"; then
-      echo
-      return 1
-   fi
+   [ -z "$path" ] && return 1
+   ! variableIsSet JOB_SUFFIX && return 1
+   ! hasJobSuffix "$filename" && return 1
 
    echo "$name"
 }
@@ -198,6 +192,8 @@ getBackupName() {
    local suffix=".${fullname##*.}"  # txt
    local name=${fullname%.*}  # path
 
+   [ -z "$path" ] && return 1
+
    # If path is a directory or has no suffix.
    if [ "$suffix" = ".$fullname" ]; then
       suffix=""
@@ -214,41 +210,36 @@ getDestination() {
    local destination key value
    local jobName="$(getJobName "$job")"
 
-   if ! hasJobSuffix "$job"; then
-      log "Not a valid job: $job" "$jobName" fail
-      echo
-      return 1
-   fi
-
    if [ ! -f "$job" ]; then
       log "Job doesn't exist: $job" "$jobName" fail
-      echo
       return 1
    fi
 
-   while read line; do
+   if ! hasJobSuffix "$job"; then
+      log "Not a valid job: $job" "$jobName" fail
+      return 1
+   fi
+
+   while read line || [ -n "$line" ]; do
       key="${line%%=*}"
       value="${line##*=}"
       
       if [ "${key,,}" = "destination" ]; then
-         
-         # Only assign the first value found.
-         [ -z "$destination" ] && destination="$value"
+         destination="$value"
       fi
    done < "$job"
 
-   # Use default if none was set in job, if BACKUPS_DESTINATION set.
-   [ -z "$destination" ] && [ -n "$BACKUPS_DESTINATION" ] \
-      && destination="$BACKUPS_DESTINATION/$jobName"
+   # Use default if none was set in job, if BACKUPS_DIR set.
+   if [ -z "$destination" ] && [ -n "$BACKUPS_DIR" ]; then
+      destination="$BACKUPS_DIR/$jobName"
+   fi
 
    if [ -z "$destination" ]; then
-      log "No destination found and BACKUPS_DESTINATION not set" "$jobName" fail
-      echo
+      log "No destination found and BACKUPS_DIR not set" "$jobName" fail
       return 1
    fi
 
    echo "$destination"
-   return 0
 }
 
 
@@ -279,7 +270,7 @@ getObjects() {
       return 1
    fi
 
-   while read line; do
+   while read line || [ -n "$line" ]; do
       # Filter any quotes that might exist.
       line="$(echo "$line" | sed "s/\"//g")"
 
@@ -291,18 +282,16 @@ getObjects() {
    
    if [ $status = 1 ]; then
       log "Job contained no valid objects: $job" "$jobName" fail
-      return $status
+      return 1
    fi
 
    printf "%s\n" "${!objects[@]}"
-
-   return $status
 }
 
 
 # $1=destination; $2=backup name; $3=job name for logging
 #
-# Find all backed up objects at a job's destination.
+# Find all backed up objects at a job's destination. Oldest are first.
 getBackups() {
    local destination="$1"
    local backupName="$2"
@@ -393,6 +382,9 @@ backupObject() {
    local object="$1"
    local destination="$2"
    local jobName="$3"
+   local backupName=$(getBackupName "$object")
+   local datedBackupName="$(date +%F)_$backupName"
+   local backupCommand="rsync -a"  # a=archive (AKA copy *all* attributes)
 
    if [ -z "$object" ]; then
       log "Object argument missing to backupObject()" "$jobName" fail
@@ -409,13 +401,9 @@ backupObject() {
       return 1
    fi
 
-   local backupCommand="rsync -a"  # a=archive (AKA copy *all* attributes)
    if ! commandIsAvailable "rsync"; then
       backupCommand="cp -ru" # r=recurse; u=update older
    fi
-
-   local backupName=$(getBackupName "$object")
-   local datedBackupName="$(date +%F)_$backupName"
 
    if [ -z "$backupName" ]; then
       log "Couldn't get backup name, skipping" "$jobName" fail
@@ -440,7 +428,7 @@ backupObject() {
    fi
 
    log "Backed up: $datedBackupName" "$jobName"
-   cleanupBackups "$destination" "$backupName" "$jobName"
+   return 0
 }
 
 
@@ -450,7 +438,7 @@ backupObject() {
 # any extra backups.
 backupJob() {
    local job="$1"
-   local jobName destination object
+   local jobName destination object backupName
    local -a objects
 
    if [ -z "$job" ]; then
@@ -479,7 +467,7 @@ backupJob() {
 
    destination="$(getDestination "$job")"
    if [ -z "$destination" ]; then
-      log "Couldn't parse backup name: $job" "$jobName" fail
+      log "Skipping, no destination for: $job" "$jobName" fail
       return 1
    fi
 
@@ -492,6 +480,8 @@ backupJob() {
 
    for object in "${objects[@]}"; do
       backupObject "$object" "$destination" "$jobName"
+      backupName="$(getBackupName "$object")"
+      cleanupBackups "$destination" "$backupName" "$jobName"
    done
 
    log "Finished backup" "$jobName"
@@ -557,7 +547,7 @@ main() {
    for arg in "${args[@]}"; do
       if [ -f "$arg" ]; then
          jobs=("$arg")
-      elif [ -d "$arg"]; then
+      elif [ -d "$arg" ]; then
          readarray -t jobs < <(getJobs "$arg")
       fi
 
@@ -578,7 +568,7 @@ readConfig() {
       local option="$1"
       local variable
       local VARIABLES=("LOG_FILE" "JOBS" "JOB_SUFFIX" "BACKUPS_LIMIT" \
-         "BACKUPS_DESTINATION")
+         "BACKUPS_DIR")
 
       for variable in "${VARIABLES[@]}"; do
          [ "$variable" = "$option" ] && return 0
@@ -598,7 +588,7 @@ readConfig() {
       return 1
    fi
 
-   while read line; do
+   while read line || [ -n "$line" ]; do
       trimmed="${line%%#*}"  # Remove comments.
 
       # Remove leading/trailing whitespace.

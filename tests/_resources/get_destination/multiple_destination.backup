@@ -1,2 +1,2 @@
-destination=/f/.backup/programming/bash/backup/tests/_resources/get_destination/override dir
-destination=/f/.backup/programming/bash/backup/tests/_resources/get_destination/default dir
+destination=/f/.backup/programming/bash/backup/tests/_resources/get_destination/first
+destination=/f/.backup/programming/bash/backup/tests/_resources/get_destination/multiple_destination

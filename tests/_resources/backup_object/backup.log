@@ -1,0 +1,8 @@
+2026-04-08 04:07:00        : (general) Backed up: 2026-04-08_foo.txt.old
+2026-04-08 04:07:00        : (general) Backed up: 2026-04-08_bar.old
+2026-04-08 04:07:00 [ERROR]: (general) Object doesn't exist for backup: /f/.backup/programming/bash/backup/tests/_resources/backup_object/fake.txt
+2026-04-08 04:07:00        : (general) Creating destination directory: /f/.backup/programming/bash/backup/tests/_resources/backup_object/destination
+2026-04-08 04:07:00        : (general) Created destination directory: /f/.backup/programming/bash/backup/tests/_resources/backup_object/destination
+2026-04-08 04:07:00        : (general) Backed up: 2026-04-08_foo.txt.old
+2026-04-08 04:07:01 [ERROR]: (general) Object argument missing to backupObject()
+2026-04-08 04:07:01        : (general) Destination argument missing to backupObject()
