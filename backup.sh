@@ -66,7 +66,6 @@ commandIsAvailable() { command -v "$1" &> /dev/null; }
 printUsage() {
    echo
    cat << EOF
-
 NAME
    Backup.sh
 
@@ -74,19 +73,19 @@ SYNOPSIS
    backup.sh [OPTION...] [FILE...]
 
 DESCRIPTION
-   Meant to be used with smaller `job` files (.backup) that contain `objects`
+   Meant to be used with smaller [job] files (.backup) that contain [objects]
    (files/directories) that need to be backed up. Objects should be full paths.
    Multipls files and directories can be used at the same time, they will be
    processed in order. Directories will be searched for job files,
-   non-recursively. The `--jobs` option does not conflict with these other
+   non-recursively. The [--jobs] option does not conflict with these other
    job files.
 
-   A `job` file can contain directories and files, and can specify an optional
-   `destination` variable to override the default backups directory. For a `job`
-   named `job_name.backup`, the default backup directory is
-   `$BACKUPS_DIR/job_name`. This directory will contain backups of all
-   the objects specified in the `job`, dated but not timestamped like so:
-   `2026-01-01_object_file.txt.old`.
+   A [job] file can contain directories and files, and can specify an optional
+   [destination] variable to override the default backups directory. For a [job]
+   named [job_name.backup], the default backup directory is
+   [\$BACKUPS_DIR/job_name]. This directory will contain backups of all
+   the objects specified in the [job], dated but not timestamped like so:
+   [2026-01-01_object_file.txt.old].
 
 OPTIONS
    -c, --config <file.conf>
@@ -115,7 +114,6 @@ EXAMPLES
 
    # Lots of options and jobs together.
    backup.sh -c backup.conf --run jobs_directory job_1.backup job_2.backup
-
 EOF
 }
 
