@@ -43,6 +43,23 @@ variableIsSet() {
 }
 
 
+# $1=value; $2=array
+isInArray() {
+   local value="$1"
+   local -n array="$2"
+
+   if [ -z "$value" ] || [ -z "$array" ]; then
+      return 1
+   fi
+
+   for element in "${array[@]}"; do
+      [ "$element" = "$value" ] && return 0
+   done
+
+   return 1
+}
+
+
 # $1=array
 arraysize() {
    local -n array="$1"
@@ -125,27 +142,40 @@ EOF
 # If any argument for status is supplied, the status is overridden to indicate
 # an error occurred. Treat it as a boolean for error.
 #
-# LOG_FILE is required to be set.
+# If LOG_FILE isn't set, it will still send messages to STDOUT/STDERR, but will
+# return a status code of 1 (error).
 log() {
    [ -n "$1" ] || return
-   variableIsSet LOG_FILE || return
-
-   local logDirectory=$(dirname "$LOG_FILE")
-   if [ ! -d "$logDirectory" ]; then
-      echo "Log directory does not exist: $logDirectory" >&2  # To STDERR.
-      return 1
-   fi
 
    local    OK="       "
    local ERROR="[ERROR]"
 
-   local timestamp=$(date "+%F %H:%M:%S")
+   local timestamp="$(date "+%F %H:%M:%S")"
    local message="$1"
    local job="${2:-general}"  # "general" is used if nothing is supplied
    local status="${3:+$ERROR}"  # If anything supplied, $ERROR overrides.
    status="${status:-$OK}"  # If empty ("else" above), $OK variable is used.
+   local entry="$timestamp $status: ($job) $message"
 
-   echo "$timestamp $status: ($job) $message" >> "$LOG_FILE"
+   if [ "$status" = "$ERROR" ]; then
+      echo "$entry" >&2
+   else
+      echo "$entry"
+   fi
+
+   if [ -z "$LOG_FILE" ]; then
+      error "LOG_FILE not set"
+      return 1
+   fi
+
+   local logDirectory="$(dirname "$LOG_FILE")"
+
+   if [ ! -d "$logDirectory" ]; then
+      error "Log directory does not exist: $logDirectory"
+      return 1
+   fi
+
+   echo "$entry" >> "$LOG_FILE"
 }
 
 
@@ -333,26 +363,44 @@ getBackups() {
 }
 
 
+# $1=destination; $2=backup name; $3=job name for logging
+#
+# Counts the number of backups in a destination and determines if there are too
+# many. Requires BACKUPS_LIMIT to be set.
+backupsWithinLimit() {
+   local destination="$1"
+   local backupName="$2"
+   local jobName="$3"
+   local -a backups
+
+   if [ -z "$destination" ] || [ -z "$backupName" ]; then
+      return 1
+   fi
+
+   readarray -t backups < <(getBackups "$destination" "$backupName" \
+      "$jobName")
+
+   if [ ${#backups[@]} -le $BACKUPS_LIMIT ]; then
+      log "Backups within limit: ${#backups[@]}/${BACKUPS_LIMIT}" "$jobName"
+      return 0
+   else
+      log "Backups exceed limit: ${#backups[@]}/${BACKUPS_LIMIT}" "$jobName"
+      return 1
+   fi
+}
+
+
 # $1=destination; $2=backup name; $3=associated job for logging
 #
-# Requires that BACKUPS_LIMIT be set to an integer.
+# Removes the oldest backup instance in a destination. Does not perform any
+# evaluation on BACKUPS_LIMIT itself, instead it is assumed that it's done prior
+# to calling this function.
 cleanupBackups() {
    local destination="$1"
    local backupName="$2"
    local jobName="$3"
-   local failsafe=0  # In case of an accidental endless loop.
    local oldestBackup
    local -a backups
-
-
-   # $1=array of backups paths
-   backupsWithinLimit() {
-      local -n array="$1"
-      local numberOfBackups=${#array[@]}
-
-      [ $numberOfBackups -le $BACKUPS_LIMIT ]
-   }
-
 
    if [ ! -d "$destination" ]; then
       log "cleanupBackups(): Destination doesn't exist: $destination" \
@@ -365,23 +413,24 @@ cleanupBackups() {
       return 1
    fi
 
-   if ! variableIsSet BACKUPS_LIMIT; then
-      log "Variable not set: BACKUPS_LIMIT" "$backupName" fail
+   readarray -t backups< <(getBackups "$destination" "$backupName" \
+      "$jobName")
+
+   if ! arrayfilled backups; then
+      log "No backups could be found for removal" "$jobName"
       return 1
    fi
 
-   while [ $failsafe -lt 5 ]; do
-      (( failsafe++ ))
-      readarray -t backups< <(getBackups "$destination" "$backupName" \
-         "$jobName")
-      backupsWithinLimit backups && return 0
-
-      local oldestBackup="${backups[0]}"
-      rm -rf "$oldestBackup"
+   oldestBackup="${backups[0]}"
+   log "Removing oldest backup: $oldestBackup" "$jobName"
+   
+   if rm -rf "$oldestBackup"; then
       log "Removed oldest backup: $oldestBackup" "$jobName"
-   done
-
-   return 1
+      return 0
+   else
+      log "Could not remove backup: $oldestBackup" "$jobName"
+      return 1
+   fi
 }
 
 
@@ -430,12 +479,7 @@ backupObject() {
       log "Created destination directory: $destination" "$jobName"
    fi
 
-   if ! $backupCommand "$object" "${destination}/${datedBackupName}"; then
-      log "Failed to backup: $datedBackupName" "$jobName" fail
-      return 1
-   fi
-
-   log "Backed up: $datedBackupName" "$jobName"
+   $backupCommand "$object" "${destination}/${datedBackupName}" || return 1
    return 0
 }
 
@@ -455,27 +499,25 @@ backupJob() {
    fi
 
    if [ ! -f "$job" ]; then
-      log "backupJob(): job file doesn't exist: $job" "" fail
+      log "Job file not found" "" fail
       return 1
    fi
 
    if ! hasJobSuffix "$job"; then
-      log "backupJob(): job file has wrong suffix: $job" "" fail
+      log "File has wrong suffix" "" fail
       return 1
    fi
 
    # Used for storage subdirectory (if JOBS directory used) and logging.
    jobName="$(getJobName "$job")"
    if [ -z "$jobName" ]; then
-      log "Couldn't parse job name: $job" "" fail
+      log "Couldn't parse job name" "" fail
       return 1
    fi
 
-   log "Starting backup" "$jobName"
-
    destination="$(getDestination "$job")"
    if [ -z "$destination" ]; then
-      log "Skipping, no destination for: $job" "$jobName" fail
+      log "No destination found" "$jobName" fail
       return 1
    fi
 
@@ -486,13 +528,26 @@ backupJob() {
       return 1
    fi
 
+   log "Destination selected: $destination" "$jobName"
+
    for object in "${objects[@]}"; do
-      backupObject "$object" "$destination" "$jobName"
+
+      log "Backing up: $object" "$jobName"
+      
+      if backupObject "$object" "$destination" "$jobName"; then
+         log "Backup: OK" "$jobName"
+      else
+         log "Backup: fail" "$jobName" fail
+         continue
+      fi
+      
       backupName="$(getBackupName "$object")"
-      cleanupBackups "$destination" "$backupName" "$jobName"
+
+      while ! backupsWithinLimit "$destination" "$backupName" "$jobName"; do
+         cleanupBackups "$destination" "$backupName" "$jobName" || return 1
+      done
    done
 
-   log "Finished backup" "$jobName"
    return 0
 }
 
@@ -538,7 +593,7 @@ getJobs() {
 
 # $1=files or directories
 main() {
-   local arg job
+   local arg job jobName
    local -a args jobs
 
    [ $# = 0 ] && printUsage
@@ -560,7 +615,16 @@ main() {
       fi
 
       for job in "${jobs[@]}"; do
-         backupJob "$job"
+
+         jobName="$(getJobName "$job")"
+         log "Starting job: $job" "$jobName"
+
+         if backupJob "$job"; then
+            log "Finished job" "$jobName"
+         else
+            log "Error processing job" "$jobName" fail
+         fi
+
       done
    done
 }
@@ -612,11 +676,25 @@ readConfig() {
 
       if isConfigOption "$key"; then
          eval $key="\$value"
-         # eval "echo processed $key: \$$key"  # For debugging.
+         log "Loaded from config: $key=$value"
       fi
    done < "$config"
+
+   return 0
 }
 
+
+# Load config first, so --jobs coming before won't cause problems.
+ARGS=("$@")
+for i in "${!ARGS[@]}"; do
+   if [ "${ARGS[i]}" = "-c" ] || [ "${ARGS[i]}" = "--config" ]; then
+      if readConfig "${ARGS[$(( i + 1 ))]}"; then
+         log "Loaded config: ${ARGS[$(( i + 1 ))]}"
+      else
+         log "Error loading config: ${ARGS[$(( i + 1 ))]}" "" fail
+      fi
+   fi
+done
 
 while [ $# -gt 0 ]; do
    case "$1" in
@@ -625,7 +703,7 @@ while [ $# -gt 0 ]; do
          exit 0
          ;;
       -c|--config)
-         readConfig "$2"
+         # Config is processed as priority above, just discard here.
          shift 2
          ;;
       --jobs)
