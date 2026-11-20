@@ -1,2 +1,2 @@
-destination=/f/.backup/programming/bash/backup/tests/_resources/get_destination/first
-destination=/f/.backup/programming/bash/backup/tests/_resources/get_destination/multiple_destination
+destination=../get_destination/first
+destination=../get_destination/multiple_destination

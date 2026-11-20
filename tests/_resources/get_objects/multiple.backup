@@ -1,4 +1,4 @@
-/f/.backup/programming/bash/backup/tests/_resources/_known_good/foo.txt
-/f/.backup/programming/bash/backup/tests/_resources/_known_good/bar
-/f/.backup/programming/bash/backup/tests/_resources/_known_good/baz space.txt
-/f/.backup/programming/bash/backup/tests/_resources/_known_good/exists
+../_known_good/foo.txt
+../_known_good/bar
+../_known_good/baz space.txt
+../_known_good/exists

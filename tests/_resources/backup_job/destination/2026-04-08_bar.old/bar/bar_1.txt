@@ -1,3 +1,0 @@
-bar_1 text
-bar_1 text
-bar_1 text

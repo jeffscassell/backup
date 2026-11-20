@@ -5,9 +5,9 @@
 # Backup.sh
 
 
+###############
 # Configuration
 ###############
-
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE}")" &> /dev/null && pwd )"
 JOBS="$SCRIPT_DIR/jobs"
@@ -16,13 +16,12 @@ BACKUPS_LIMIT=2
 BACKUPS_DIR="$SCRIPT_DIR/backups"
 LOG_FILE="$BACKUPS_DIR/backups.log"
 
-
+#########
 # Helpers
 #########
 
-
 # $1=value; $2=array
-isInArray() {
+insidearray() {
    local value="$1"
    local -n array="$2"
 
@@ -87,10 +86,9 @@ getAbsolute() {
    echo "$resolved"
 }
 
-
+#########
 # Program
 #########
-
 
 printUsage() {
    echo
@@ -337,7 +335,7 @@ getObjects() {
       # Filter any quotes that might exist.
       line="$(echo "$line" | sed "s/\"//g")"
 
-      # Convert relative paths to absolute (relative to job directory).
+      # Convert relative paths to absolute (relative to the job's directory).
       if [ "${line:0:3}" = "../" ] || [ "${line:0:2}" = "./" ]; then
          line="$(getAbsolute "$line" "$job")"
       fi

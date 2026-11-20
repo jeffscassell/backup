@@ -1,16 +1,18 @@
-. "/f/.backup/programming/bash/backup/backup.sh"
+SCRIPT_DIR="$(cd -- $(dirname -- "${BASH_SOURCE[0]}") &> /dev/null && pwd)"
+. "$SCRIPT_DIR/../backup.sh"
 
 
+###############
 # Configuration
 ###############
 
 # Testing config.
-RESOURCES="/f/.backup/programming/bash/backup/tests/_resources"
+RESOURCES="$SCRIPT_DIR/tests/_resources"
 
 # Module config.
 LOG_FILE=  # Disable logging.
 
-
+#######
 # Tests
 #######
 
@@ -18,19 +20,21 @@ test_log() {
    local directory="$RESOURCES/log"
    local LOG_FILE="$directory/backups.log"
    local expected
-   
-   [ -f "$LOG_FILE" ] && rm "$LOG_FILE"
-   assert ! -e "$LOG_FILE"
 
    # LOG_FILE doesn't exist: create it.
+   [ -f "$LOG_FILE" ] && rm "$LOG_FILE"
+   assert ! -e "$LOG_FILE"
    assert log "ok message 1"
    assert grep "ok message 1" "$LOG_FILE"
+   assert -f "$LOG_FILE"
 
    # Error message logging.
    assert log "error message 1" "test_job" fail
    assert -n "$(tail -1 "$LOG_FILE" | grep "[ERROR]")"
    assert log "error message 2" "test_job" anything
    assert -n "$(tail -1 "$LOG_FILE" | grep "error message 2" | grep "ERROR")"
+   rm "$LOG_FILE"
+   assert ! -f "$LOG_FILE"
 
    # Message isn't provided: fail.
    assert ! log
@@ -40,7 +44,7 @@ test_log() {
    assert ! log "fail message 1" "test_job"
 
    # Directory for LOG_FILE doesn't exist: fail.
-   LOG_FILE="/$directory/fake/backups.log"
+   LOG_FILE="$directory/fake/backups.log"
    assert ! log "fail message 1" "test_job"
    assert ! -f "$LOG_FILE"
 }
@@ -78,7 +82,7 @@ test_getObjects() {
       readarray -t objects < <(getObjects "$job")
       echo ${#objects[@]}
    }
-   
+
    # Job contains a space and has a single file with a space.
    job="$directory/single space.backup"
    assert $(objectsSize) = 1
@@ -151,7 +155,7 @@ test_getJobs() {
    readarray -t jobs < <(getJobs "$directory")
    assert ! getJobs "$directory"
    assert $(arraysize jobs) = 0
-   
+
    # Specified directory doesn't exist.
    directory="/a/directory"
    readarray -t jobs < <(getJobs "$directory")
@@ -192,7 +196,7 @@ test_getDestination() {
    job="$directory/fake_destination.backup"
    assert "$(getDestination "$job")" = "$directory/fake_destination"
    assert getDestination "$job"
-   
+
    # Job file has wrong suffix: return empty.
    job="$directory/wrong.suffix"
    assert -z "$(getDestination "$job")"
@@ -321,7 +325,7 @@ test_cleanupBackups() {
 
    [ -d "$destination" ] && rm -rf "$destination"
    mkdir "$destination"
-   
+
    # Does not do any checking itself. Dumb utility that just removes oldest
    # backup (via getBackups()).
    assert $(backupsSize) = 0
@@ -400,6 +404,7 @@ test_backupObject() {
    assert backupObject "$object" "$destination"
    assert -d "$destination"
    assert $(backupsSize) = 1
+   rm -rf "$destination"/*
 
    # Missing object argument: fail.
    assert ! backupObject "" "$destination"
@@ -444,7 +449,7 @@ test_backupJob() {
    assert ! backupJob "$job"
 
    # Job doesn't exist: fail.
-   rm "$destination"/*
+   rm -rf "$destination"/*
    job="$directory/fake.backup"
    assert ! -f "$job"
    assert ! backupJob "$job"
