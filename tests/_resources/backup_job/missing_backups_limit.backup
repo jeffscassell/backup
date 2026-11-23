@@ -1,0 +1,5 @@
+../_known_good/foo.txt
+../_known_good/bar
+../_known_good/baz space.txt
+
+destination=./_backup_destination

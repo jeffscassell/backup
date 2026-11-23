@@ -9,27 +9,29 @@
 # Configuration
 ###############
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE}")" &> /dev/null && pwd )"
-JOBS="$SCRIPT_DIR/jobs"
-JOB_SUFFIX=.backup
-BACKUPS_LIMIT=2
-BACKUPS_DIR="$SCRIPT_DIR/backups"
-LOG_FILE="$BACKUPS_DIR/backups.log"
-
-#########
+# =======
 # Helpers
-#########
+# =======
+
+# $1=file path
+pathIsRelative(){ [ "${1:0:3}" = "../" ] || [ "${1:0:2}" = "./" ]; }
 
 # $1=value; $2=array
 insidearray() {
-   local value="$1"
-   local -n array="$2"
-
-   if [ -z "$value" ] || [ -z "$array" ]; then
+   if [ -z "$1" ]; then
+      echo "insidearray: missing value" >&2
       return 1
    fi
 
-   for element in "${array[@]}"; do
+   if [ -z "$2" ]; then
+      echo "insidearray: missing array" >&2
+      return 1
+   fi
+
+   local value="$1"
+   local -n _insideArray="$2"
+
+   for element in "${_insideArray[@]}"; do
       [ "$element" = "$value" ] && return 0
    done
 
@@ -38,18 +40,33 @@ insidearray() {
 
 
 # $1=array
+#
+# "Returns" to STDOUT; -1 if no array name is passed.
 arraysize() {
-   local -n array="$1"
    [ -z "$1" ] && echo -1 && return
-   echo ${#array[@]}
+   local -n _sizeArray="$1"
+   echo ${#_sizeArray[@]}
+}
+
+
+# $1=array
+#
+# "Returns" to STDOUT. Does not print anything if array is empty.
+returnarray() {
+   [ -n "$1" ] || return
+   local -n _returnArray=$1
+
+   # Don't return an empty array.
+   [ "${#_returnArray[@]}" -gt 0 ] || return
+   printf "%s\n" "${_returnArray[@]}"
 }
 
 
 # $1=array
 arrayfilled() {
-   local -n array="$1"
    [ -n "$1" ] || return
-   [ ${#array[@]} -gt 0 ]
+   local -n _filledArray="$1"
+   [ ${#_filledArray[@]} -gt 0 ]
 }
 
 
@@ -59,24 +76,21 @@ commandIsAvailable() { command -v "$1" &> /dev/null; }
 
 # $1=file; $2=suffix
 hasSuffix() {
+   [ -n "$1" ] && [ -n "$2" ] || return
+
    local file="$1"
    local suffix="$2"
-
-   if [ -z "$file" ] || [ -z "$suffix" ]; then return 1; fi
-
-   echo "$file" | grep -q -E "^.*""$suffix""$"
+   echo "$file" | grep -q -E "^.*${suffix}$"
 }
 
 
 # $1=relative path; $2=job
 getAbsolute() {
+   [ -n "$1" ] && [ -n "$2" ] || return
+
    local relative="$1"
    local job="$2"
    local resolved
-
-   if [ -z "$relative" ] || [ -z "$job" ]; then
-      return 1
-   fi
 
    jobDirectory="$(cd -- "$(dirname -- "$job")" &> /dev/null && pwd)"
 
@@ -86,9 +100,9 @@ getAbsolute() {
    echo "$resolved"
 }
 
-#########
+# =======
 # Program
-#########
+# =======
 
 printUsage() {
    echo
@@ -121,7 +135,7 @@ OPTIONS
 
    -h, --help
       This help message.
-   
+
    --jobs
       Run all job files in the JOBS directory. Can be used while also specifying
       other job files/directories.
@@ -204,13 +218,14 @@ hasConfigSuffix(){ hasSuffix "$1" ".conf"; }
 #
 # /a/full/path/job.backup -> job
 getJobName() {
+   [ -n "$1" ] || return
+
    local path="$1"  # /a/full/path/job.backup
    local filename="$(basename "$path")"  # job.backup
    local name="$(basename "$filename" "$JOB_SUFFIX")"  # job
 
-   [ -z "$path" ] && return 1
-   [ -z "$JOB_SUFFIX" ] && return 1
-   ! hasJobSuffix "$filename" && return 1
+   [ -n "$JOB_SUFFIX" ] || return
+   hasJobSuffix "$filename" || return
 
    echo "$name"
 }
@@ -218,18 +233,19 @@ getJobName() {
 
 # $1=object path
 #
-# Parse an object and return the name it will use for backups. For files, the
-# extension is included. Works with relative and absolute paths.
+# "Returns" to STDOUT. Parse an object and return the name it will use for
+# backups. For files, the extension is included. Works with relative and
+# absolute paths.
 #
 # /a/path/to/file.txt -> file.txt.old
 # /a/path/to/directory -> directory.old
 getBackupName() {
+   [ -n "$1" ] || return
+
    local path="$1"  # /a/full/path.txt
    local fullname="${path##*/}"  # path.txt
    local suffix=".${fullname##*.}"  # txt
    local name=${fullname%.*}  # path
-
-   [ -z "$path" ] && return 1
 
    # If path is a directory or has no suffix.
    if [ "$suffix" = ".$fullname" ]; then
@@ -242,54 +258,70 @@ getBackupName() {
 
 
 # $1=job file
+getBackupsLimit(){
+   [ -n "$1" ] || return
+
+   local file="$1"
+   local limit value
+   local jobName="$(getJobName "$file")"
+
+   # Extract only the first line containing "destination=" (case-insensitive).
+   # Remove any quotes and leading/trailing whitespace.
+   value="$(grep -i "backups_limit=" "$file" | sed \
+      's/backups_limit=//; s/"//g; s/^ *//; s/ *$//; q')"
+
+   # First, try to assign value from job file, if present.
+   [ -n "$value" ] && limit="$value"
+
+   # Second, try to assign the default (BACKUPS_DIR).
+   if [ -z "$limit" ] && [ -n "$BACKUPS_LIMIT" ]; then
+      limit="$BACKUPS_LIMIT"
+   fi
+
+   # If neither of those work, give up.
+   if [ -z "$limit" ]; then
+      log "Backups limit could not be determined" "$jobName" fail
+      return 1
+   fi
+
+   echo "$limit"
+}
+
+
+# $1=job file
 getDestination() {
-   local job="$1"
-   local destination key value
-   local jobName="$(getJobName "$job")"
-   local resolved
+   [ -n "$1" ] || return
 
-   if [ ! -f "$job" ]; then
-      log "Job doesn't exist: $job" "$jobName" fail
-      return 1
-   fi
+   local file="$1"
+   local destination value
+   local jobName="$(getJobName "$file")"
 
-   if ! hasJobSuffix "$job"; then
-      log "Not a valid job: $job" "$jobName" fail
-      return 1
-   fi
+   # Extract only the first line containing "destination=" (case-insensitive).
+   # Remove any quotes and leading/trailing whitespace.
+   value="$(grep -i "destination=" "$file" | sed \
+      's/destination=//; s/"//g; s/^ *//; s/ *$//; q')"
 
-   while read line || [ -n "$line" ]; do
+   if pathIsRelative "$value"; then
+      local resolved="$(getAbsolute "$value" "$file")"
 
-      # Discard lines that don't have "destination=" in it.
-      ! $(echo "$line" | grep -q "destination=") && continue 
-
-      value="${line##destination=}"
-      value="${value%%#*}"  # Remove comments.
-      value="$(echo "$value" | sed "s/\"//g")"  # Remove any quotes.
-
-      # Remove leading/trailing whitespace.
-      value="$(echo "$value" | sed "s/^[[:space:]]*//; s/[[:space:]]*$//")"
-
-      if [ "${value:0:3}" = "../" ] || [ "${value:0:2}" = "./" ]; then
-         resolved="$(getAbsolute "$value" "$job")"
-
-         if [ -z "$resolved" ]; then
-            log "Relative destination's parent does not exist: $value" \
-               "$jobName" fail
-            return 1
-         fi
-
-         value="$resolved"
+      if [ -z "$resolved" ]; then
+         log "Relative destination's parent does not exist: $value" \
+            "$jobName" fail
+         return 1
       fi
-      
-      [ -n "$value" ] && destination="$value"
-   done < "$job"
 
-   # Use default if none was set in job, if BACKUPS_DIR set.
+      value="$resolved"
+   fi
+
+   # First, try to assign value from job file (if it exists).
+   [ -n "$value" ] && destination="$value"
+
+   # Second, try to assign the default (BACKUPS_DIR).
    if [ -z "$destination" ] && [ -n "$BACKUPS_DIR" ]; then
       destination="$BACKUPS_DIR/$jobName"
    fi
 
+   # If neither of those work, give up.
    if [ -z "$destination" ]; then
       log "No destination found and BACKUPS_DIR not set" "$jobName" fail
       return 1
@@ -306,54 +338,46 @@ getDestination() {
 #
 # JOB_SUFFIX must be set.
 getObjects() {
-   local job="$1"
+   [ -n "$1" ] || return
+
+   local file="$1"
    local status=1
-   local jobName="$(getJobName "$job")"
-   local -A objects
+   local jobName="$(getJobName "$file")"
+   local -A objects  # Associative array is used to prevent duplicates.
 
-   if [ ! -f "$job" ]; then
-      log "Job file doesn't exist: $job" "$jobName" fail
-      return 1
-   fi
+   while read -r line; do
 
-   if [ -z "$JOB_SUFFIX" ]; then
-      log "JOB_SUFFIX not set, can't parse job: $job" "$jobName" fail
-      return 1
-   fi
-
-   if ! hasJobSuffix "$job"; then
-      log "File suffix does not match JOB_SUFFIX: $job" "$jobName" fail
-      return 1
-   fi
-
-   while read line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
 
       line="${line%%#*}"  # Remove comments.
-      [ -z "$line" ] && continue  # Discard empty lines.
+      [ -n "$line" ] || continue  # Discard empty lines.
       (echo "$line" | grep -q "=") && continue  # Discard lines with "=".
 
       # Filter any quotes that might exist.
       line="$(echo "$line" | sed "s/\"//g")"
 
       # Convert relative paths to absolute (relative to the job's directory).
-      if [ "${line:0:3}" = "../" ] || [ "${line:0:2}" = "./" ]; then
-         line="$(getAbsolute "$line" "$job")"
+      if pathIsRelative "$line"; then
+         line="$(getAbsolute "$line" "$file")"
       fi
 
       if [ -e "$line" ]; then
-         objects["$line"]=1  # Assigning this way prevents duplicates.
+         # Use the line as the key to assign the arbitrary value of 1, and later
+         # return only the keys. Assigning this way prevents duplicates.
+         objects["$line"]=1
          status=0
       fi
-   done < "$job"
-   
-   [ $status = 1 ] && return 1
+   done < "$file"
+
+   [ $status = 0 ] || return
    printf "%s\n" "${!objects[@]}"
 }
 
 
-# $1=destination; $2=backup name; $3=job name for logging
+# $1=DESTINATION; $2=backup NAME; $3=job name for logging
 #
-# Find all backed up objects at a job's destination. Oldest are first.
+# Find all backup objects matching NAME at a given DESTINATION. Oldest are
+# first.
 getBackups() {
    local destination="$1"
    local backupName="$2"
@@ -383,7 +407,7 @@ getBackups() {
    shopt -s nullglob
    backups=("$destination"/*"$backupName")
    $nullglobSetting
-   arrayfilled backups && printf "%s\n" "${backups[@]}"
+   returnarray backups
 }
 
 
@@ -392,9 +416,12 @@ getBackups() {
 # Counts the number of backups in a destination and determines if there are too
 # many. Requires BACKUPS_LIMIT to be set.
 backupsWithinLimit() {
-   local destination="$1"
-   local backupName="$2"
-   local jobName="$3"
+   [ -n "$1" ] && [ -n "$2" ] && [ -n "$3" ] || return
+
+   local limit=$1
+   local destination="$2"
+   local backupName="$3"
+   local jobName="$4"
    local -a backups
 
    if [ -z "$destination" ] || [ -z "$backupName" ]; then
@@ -404,11 +431,11 @@ backupsWithinLimit() {
    readarray -t backups < <(getBackups "$destination" "$backupName" \
       "$jobName")
 
-   if [ ${#backups[@]} -le $BACKUPS_LIMIT ]; then
-      log "Backups within limit: ${#backups[@]}/${BACKUPS_LIMIT}" "$jobName"
+   if [ ${#backups[@]} -le $limit ]; then
+      log "Backups within limit: ${#backups[@]}/${limit}" "$jobName"
       return 0
    else
-      log "Backups exceed limit: ${#backups[@]}/${BACKUPS_LIMIT}" "$jobName"
+      log "Backups exceed limit: ${#backups[@]}/${limit}" "$jobName"
       return 1
    fi
 }
@@ -447,7 +474,7 @@ cleanupBackups() {
 
    oldestBackup="${backups[0]}"
    log "Removing oldest backup: $oldestBackup" "$jobName"
-   
+
    if rm -rf "$oldestBackup"; then
       log "Remove: OK" "$jobName"
       return 0
@@ -460,27 +487,22 @@ cleanupBackups() {
 
 # $1=object; $2=destination; $3=job name for logging
 backupObject() {
+   if [ -z "$1" ]; then
+      log "Object argument missing to backupObject()" "$jobName" fail
+      return 1
+   fi
+
+   if [ -z "$2" ]; then
+      log "Destination argument missing to backupObject()" "$jobName" ""
+      return 1
+   fi
+
    local object="$1"
    local destination="$2"
    local jobName="$3"
    local backupName=$(getBackupName "$object")
    local datedBackupName="$(date +%F)_$backupName"
    local backupCommand="rsync -a"  # a=archive (AKA copy *all* attributes)
-
-   if [ -z "$object" ]; then
-      log "Object argument missing to backupObject()" "$jobName" fail
-      return 1
-   fi
-
-   if [ -z "$destination" ]; then
-      log "Destination argument missing to backupObject()" "$jobName" ""
-      return 1
-   fi
-
-   if [ ! -e "$object" ]; then
-      log "Object doesn't exist for backup: $object" "$jobName" fail
-      return 1
-   fi
 
    if ! commandIsAvailable "rsync"; then
       backupCommand="cp -ru" # r=recurse; u=update older
@@ -504,8 +526,7 @@ backupObject() {
    fi
 
    log "Backing up: $datedBackupName" "$jobName"
-   $backupCommand "$object" "${destination}/${datedBackupName}" || return 1
-   return 0
+   $backupCommand "$object" "${destination}/${datedBackupName}" || return
 }
 
 
@@ -514,87 +535,63 @@ backupObject() {
 # Process a job file and back up the associated objects within, then clean up
 # any extra backups.
 backupJob() {
-   local job="$1"
-   local jobName destination object backupName
-   local -a objects
-
-   if [ -z "$job" ]; then
+   if [ -z "$1" ]; then
       log "No job passed to backupJob()" "" fail
       return 1
    fi
 
-   if [ ! -f "$job" ]; then
-      log "Job file not found" "" fail
-      return 1
-   fi
+   local file="$1"
+   local jobName destination backupName
+   local -a objects
 
-   if ! hasJobSuffix "$job"; then
-      log "File has wrong suffix" "" fail
-      return 1
-   fi
-
-   # Used for storage subdirectory (if JOBS directory used) and logging.
-   jobName="$(getJobName "$job")"
-   if [ -z "$jobName" ]; then
-      log "Couldn't parse job name" "" fail
-      return 1
-   fi
-
-   destination="$(getDestination "$job")"
-   if [ -z "$destination" ]; then
-      log "No destination selected" "$jobName" fail
-      return 1
-   fi
-
-   readarray -t objects < <(getObjects "$job" "$jobName")
-
-   if ! arrayfilled objects; then
-      log "Job had no valid objects" "$jobName" fail
-      return 1
-   fi
-
+   # Used for job's backup location (if JOBS directory used) and logging.
+   jobName="$(getJobName "$file")"
+   log "Processing job: $file" "$jobName"
+   destination="$(getDestination "$file")"
    log "Destination selected: $destination" "$jobName"
+   backupsLimit=$(getBackupsLimit "$file")
+   log "Backups limit: $backupsLimit" "$jobName"
+   readarray -t objects < <(getObjects "$file" "$jobName")
 
+   local object
    for object in "${objects[@]}"; do
 
       log "Processing object: $object" "$jobName"
-      
+
       if backupObject "$object" "$destination" "$jobName"; then
          log "Backup: OK" "$jobName"
       else
          log "Backup: fail" "$jobName" fail
          continue
       fi
-      
+
       backupName="$(getBackupName "$object")"
 
-      while ! backupsWithinLimit "$destination" "$backupName" "$jobName"; do
-         cleanupBackups "$destination" "$backupName" "$jobName" || return 1
+      while ! backupsWithinLimit $backupsLimit "$destination" "$backupName" \
+         "$jobName"; do
+         cleanupBackups "$destination" "$backupName" "$jobName" || return
       done
    done
-
-   return 0
 }
 
 
 # $1=directory containing jobs
 #
-# Find job files (.backup) within a directory. Does not recurse into
+# Find job files (.backup by default) within a directory. Does not recurse into
 # subdirectories.
 #
 # JOB_SUFFIX must be set.
 getJobs() {
-   local directory="$1"
-   local -a jobs
-   local job
-
-   if [ -z "$JOB_SUFFIX" ]; then
-      log "JOB_SUFFIX not set, can't parse directory" "" fail
+   if [ -z "$1" ]; then
+      log "No directory argument for getJobs()" "" fail
       return 1
    fi
 
-   if [ -z "$directory" ]; then
-      log "No directory argument for getJobs()" "" fail
+   local directory="$1"
+   local -a jobs
+
+   if [ -z "$JOB_SUFFIX" ]; then
+      log "JOB_SUFFIX not set, can't parse directory" "" fail
       return 1
    fi
 
@@ -605,50 +602,104 @@ getJobs() {
 
    readarray -t jobs < <(find "$directory" -maxdepth 1 -type f \
       -name "*$JOB_SUFFIX")
-   
-   ! arrayfilled jobs && return 1
 
-   printf "%s\n" "${jobs[@]}"
-   return 0
+   returnarray jobs
+}
+
+
+# $1=job file
+validateJobFile(){
+   local file="$1"
+
+   if [ ! -f "$file" ]; then
+      log "Job file not found: $file" "" fail
+      return 1
+   fi
+
+   if ! hasJobSuffix "$file"; then
+      log "File has wrong suffix: $file" "" fail
+      return 1
+   fi
+
+   # Used for job's backup location (if JOBS directory used) and logging.
+   local jobName="$(getJobName "$file")"
+   if [ -z "$jobName" ]; then
+      log "Couldn't parse job name" "" fail
+      return 1
+   fi
+
+   local destination="$(getDestination "$file")"
+   if [ -z "$destination" ]; then
+      log "No destination selected" "$jobName" fail
+      return 1
+   fi
+
+   local limit=$(getBackupsLimit "$file")
+   if [ -z "$limit" ]; then
+      log "No backups_limit could be set" "$jobName" fail
+      return 1
+   fi
+
+   readarray -t objects < <(getObjects "$file" "$jobName")
+
+   if ! arrayfilled objects; then
+      log "Job has no valid objects" "$jobName" fail
+      return 1
+   fi
 }
 
 
 # $1=files or directories
 main() {
-   local arg job jobName
-   local -a args jobs
+   if [ ! $# -gt 0 ]; then
+      printUsage
+      exit 1
+   fi
 
-   [ $# = 0 ] && printUsage
+   local paths=("$@")
+   local job validJob jobName
+   local -a jobs validJobs
 
-   args=("$@")
-   for arg in "${args[@]}"; do
-      
-      if [ ! -e "$arg" ]; then
-         log "Could not find: $arg" "" fail
-         continue
-      fi
-   done
+   local path
+   for path in "${paths[@]}"; do
 
-   for arg in "${args[@]}"; do
-      if [ -f "$arg" ]; then
-         jobs=("$arg")
-      elif [ -d "$arg" ]; then
-         log "Finding jobs in: $arg"
-         readarray -t jobs < <(getJobs "$arg")
-         
-         if ! arrayfilled jobs; then
-            log "No jobs found" "" fail
+      # Validate jobs.
+      if [ -f "$path" ]; then
+         if validateJobFile "$path"; then
+            validJobs=("$path")
+         else
+            log "Invalid job file: $path" "" fail
             continue
          fi
+      elif [ -d "$path" ]; then
+         log "Finding jobs in: $path"
+         readarray -t jobs < <(getJobs "$path")
+
+         if ! arrayfilled jobs; then
+            log "No jobs found in $path" "" fail
+            continue
+         fi
+
+         for job in "${jobs[@]}"; do
+            if validateJobFile "$job"; then
+               validJobs+=("$job")
+            else
+               log "Invalid job file: $job" "" fail
+               continue
+            fi
+         done
+      else
+         log "Could not find: $path" "" fail
+         continue
       fi
 
+      # Backup valid jobs.
+      for validJob in "${validJobs[@]}"; do
 
-      for job in "${jobs[@]}"; do
+         jobName="$(getJobName "$validJob")"
+         log "Starting job: $validJob" "$jobName"
 
-         jobName="$(getJobName "$job")"
-         log "Starting job: $job" "$jobName"
-
-         if backupJob "$job"; then
+         if backupJob "$validJob"; then
             log "Finished job" "$jobName"
          else
             log "Error processing job" "$jobName" fail
@@ -661,8 +712,8 @@ main() {
 
 readConfig() {
    local config="$1"
-   local key value trimmed line
-   
+   local key value
+
 
    # $1=option
    isConfigOption() {
@@ -689,64 +740,84 @@ readConfig() {
       return 1
    fi
 
-   while read line || [ -n "$line" ]; do
+   local line
+   while read -r line; do
+
+      # Discard empty lines.
+      [ -n "$line" ] || continue
 
       # Discard lines that don't have "=" in it.
-      ! (echo "$line" | grep -q "=") && continue 
+      (echo "$line" | grep -q "=") || continue
 
-      # Discard lines with no values.
-      [ -z "${line##*=}" ] && continue
+      # Remove comments.
+      line="$(echo "$line" | sed 's/#.*//')"
 
-      line="${line%%#*}"  # Remove comments.
-      line="$(echo "$line" | sed "s/\"//g")"  # Remove any quotes.
+      key="$(echo "$line" | sed -E 's/^(.*)=.*/\1/')"
 
-      # Remove leading/trailing whitespace.
-      line="$(echo "$line" | sed "s/^[[:space:]]*//; s/[[:space:]]*$//")"
-
-      key="${line%%=*}"
-      value="${line##*=}"
+      # Remove quotes and leading/trailing whitepsace.
+      value="$(echo "$line" | sed -E \
+         's/.*=(.*)/\1/; s/"//g; s/^ *//; s/ *$//')"
 
       if isConfigOption "$key"; then
          eval $key="\$value"
          log "Loaded variable from config: $key=$value"
       fi
    done < "$config"
-
-   return 0
 }
 
 
-# Load config first, so --jobs coming before won't cause problems.
-ARGS=("$@")
-for i in "${!ARGS[@]}"; do
-   if [ "${ARGS[i]}" = "-c" ] || [ "${ARGS[i]}" = "--config" ]; then
-      if readConfig "${ARGS[$(( i + 1 ))]}"; then
-         log "Loaded config: ${ARGS[$(( i + 1 ))]}"
-      else
-         log "Error loading config: ${ARGS[$(( i + 1 ))]}" "" fail
+
+
+processOptions(){
+
+   SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE}")" &> /dev/null && pwd )"
+   JOBS="$SCRIPT_DIR/jobs"
+   JOB_SUFFIX=.backup
+   BACKUPS_LIMIT=2
+   BACKUPS_DIR="$SCRIPT_DIR/backups"
+   LOG_FILE="$BACKUPS_DIR/backups.log"
+
+   # Load config first, so --jobs coming before won't cause problems.
+   ARGS=("$@")
+   for i in "${!ARGS[@]}"; do
+      if [ "${ARGS[i]}" = "-c" ] || [ "${ARGS[i]}" = "--config" ]; then
+         if readConfig "${ARGS[$(( i + 1 ))]}"; then
+            log "Loaded config: ${ARGS[$(( i + 1 ))]}"
+         else
+            log "Error loading config: ${ARGS[$(( i + 1 ))]}" "" fail
+         fi
       fi
-   fi
-done
+   done
 
-while [ $# -gt 0 ]; do
-   case "$1" in
-      -h|--help)
-         printUsage
-         exit 0
-         ;;
-      -c|--config)
-         # Config is processed as priority above, just discard here.
-         shift 2
-         ;;
-      --jobs)
-         [ -z "$JOBS" ] && log "JOBS not set" "" fail && exit 1
+   while [ $# -gt 0 ]; do
+      case "$1" in
+         -h|--help)
+            printUsage
+            exit 0
+            ;;
+         -c|--config)
+            # Config is processed as priority above, just discard here.
+            shift 2
+            ;;
+         --jobs)
+            [ -z "$JOBS" ] && log "JOBS not set" "" fail && exit 1
 
-         main "$JOBS"
-         shift 1
-         ;;
-      *)
-         main "$@"
-         exit
-         ;;
-   esac
-done
+            main "$JOBS"
+            shift 1
+            ;;
+         -t|--test)
+            [ -n "$2" ] || printUsage
+            validateJobFile "$2"
+            exit
+            ;;
+         *)
+            main "$@"
+            exit
+            ;;
+      esac
+   done
+}
+
+
+processOptions "$@"
+

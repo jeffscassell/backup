@@ -83,66 +83,55 @@ test_getObjects() {
       echo ${#objects[@]}
    }
 
+   # Job contains real objects, destination, and backups_limit.
+   job="$directory/good.backup"
+   assert $(objectsSize) -eq 3
+   assert getObjects "$job"
+
    # Job contains a space and has a single file with a space.
    job="$directory/single space.backup"
-   assert $(objectsSize) = 1
+   assert $(objectsSize) -eq 1
    assert getObjects "$job"
 
    # Object has quotes.
    job="$directory/quotes.backup"
-   assert $(objectsSize) = 1
+   assert $(objectsSize) -eq 1
    assert getObjects "$job"
 
    # Job contains multiple real files and directories.
    job="$directory/multiple.backup"
-   assert $(objectsSize) = 4
+   assert $(objectsSize) -eq 4
    assert getObjects "$job"
 
    # Duplicate objects: return only unique objects.
    job="$directory/duplicates.backup"
-   assert $(objectsSize) = 1
+   assert $(objectsSize) -eq 1
    assert getObjects "$job"
 
    # Job specifies a destination: return only objects.
    job="$directory/complex.backup"
-   assert $(objectsSize) = 3
+   assert $(objectsSize) -eq 3
    assert getObjects "$job"
 
    # Job contains real and fake objects: return only real ones.
    job="$directory/mixed.backup"
-   assert $(objectsSize) = 2
+   assert $(objectsSize) -eq 2
    assert getObjects "$job"
 
    # Job contains only fake objects: return nothing.
    job="$directory/fake.backup"
-   assert $(objectsSize) = 0
+   assert $(objectsSize) -eq 0
    assert ! getObjects "$job"
 
    # Job contains nothing: return nothing.
    job="$directory/empty.backup"
-   assert $(objectsSize) = 0
-   assert ! getObjects "$job"
-
-   # Job doesn't exist: return nothing.
-   job="$directory/nonexistent.backup"
-   assert $(objectsSize) = 0
-   assert ! getObjects "$job"
-
-   # JOB_SUFFIX is wrong: return nothing.
-   job="$directory/wrong.suffix"
-   assert $(objectsSize) = 0
+   assert $(objectsSize) -eq 0
    assert ! getObjects "$job"
 
    # Object is a relative path.
    job="$directory/relative.backup"
-   assert $(objectsSize) = 2
+   assert $(objectsSize) -eq 2
    assert getObjects "$job"
-
-   # JOB_SUFFIX not set: return nothing.
-   local JOB_SUFFIX=
-   job="$directory/single space.backup"
-   assert $(objectsSize) = 0
-   assert ! getObjects "$job"
 }
 
 
@@ -154,31 +143,32 @@ test_getJobs() {
    directory="$RESOURCES/_backup_destination"
    readarray -t jobs < <(getJobs "$directory")
    assert ! getJobs "$directory"
-   assert $(arraysize jobs) = 0
+   assert $(arraysize jobs) -eq 0
 
    # Specified directory doesn't exist.
    directory="/a/directory"
    readarray -t jobs < <(getJobs "$directory")
    assert ! getJobs "$directory"
-   assert $(arraysize jobs) = 0
+   assert $(arraysize jobs) -eq 0
 
-   # Normal functioning.
+   # Normal functioning. Do not recurse into any subdirectories (2 extra jobs
+   # within would result in 5 total jobs).
    directory="$RESOURCES/get_jobs"
    readarray -t jobs < <(getJobs "$directory")
    assert getJobs "$directory"
-   assert $(arraysize jobs) = 3
+   assert $(arraysize jobs) -eq 3
 
    # Job suffix is changed from default .backup.
    local JOB_SUFFIX=.else
    readarray -t jobs < <(getJobs "$directory")
    assert getJobs "$directory"
-   assert ${#jobs[@]} = 2
+   assert ${#jobs[@]} -eq 2
 
    # Job suffix not set.
    JOB_SUFFIX=
    readarray -t jobs < <(getJobs "$directory")
    assert ! getJobs "$directory"
-   assert $(arraysize jobs) = 0
+   assert $(arraysize jobs) -eq 0
 }
 
 
@@ -187,29 +177,25 @@ test_getDestination() {
    local BACKUPS_DIR="$RESOURCES/_backup_destination"
    local job destination
 
+   # Job file contains objects, destination, and backups_limit.
+   job="$directory/good.backup"
+   assert "$(getDestination "$job")" = "$directory/_backup_destination"
+   assert getDestination "$job"
+
    # Job file does not have a destination provided: use default.
    job="$directory/no_destination.backup"
    assert "$(getDestination "$job")" = "$BACKUPS_DIR/no_destination"
    assert getDestination "$job"
 
-   # Destination in job doesn't exist: return anyway.
+   # Destination in job doesn't exist: return anyway (gets created
+   # in backupObject()).
    job="$directory/fake_destination.backup"
    assert "$(getDestination "$job")" = "$directory/fake_destination"
    assert getDestination "$job"
 
-   # Job file has wrong suffix: return empty.
-   job="$directory/wrong.suffix"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
-
-   # Job file doesn't exist: return empty.
-   job="/a/job.backup"
-   assert -z "$(getDestination "$job")"
-   assert ! getDestination "$job"
-
-   # Has multiple destinations: only use the last.
+   # Has multiple destinations: use the first.
    job="$directory/multiple_destination.backup"
-   assert "$(getDestination "$job")" = "$directory/multiple_destination"
+   assert "$(getDestination "$job")" = "$directory/first"
    assert getDestination "$job"
 
    # Default BACKUPS_DIR variable isn't set, and no destination in job:
@@ -254,37 +240,37 @@ test_getBackups() {
    # Destination and backup object exist: return array of names.
    backupName=foo.txt.old
    readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 1
+   assert $(arraysize backups) -eq 1
 
    # Backups are gathered in order of oldest first.
    backupName=order.txt.old
    readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 3
+   assert $(arraysize backups) -eq 3
    year=2020
    for backup in "${backups[@]}"; do
       foundYear="${backup##*/}"
       foundYear="${foundYear%%-*}"
-      assert "$foundYear" = $(( year++ ))
+      assert "$foundYear" -eq $(( year++ ))
    done
 
    # No backup objects exist: return nothing.
    backupName=fake.txt.old
    readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 0
+   assert $(arraysize backups) -eq 0
 
    # Destination doesn't exist: return nothing.
    backupName=foo.txt.old
    destination="$directory/fake"
    readarray -t backups < <(getBackups "$destination" "$backupName")
-   assert $(arraysize backups) = 0
+   assert $(arraysize backups) -eq 0
 
    # Missing destination argument: return nothing.
    readarray -t backups < <(getBackups "" "$backupName")
-   assert $(arraysize backups) = 0
+   assert $(arraysize backups) -eq 0
 
    # Missing backup name argument: return nothing.
    readarray -t backups < <(getBackups "$destination")
-   assert $(arraysize backups) = 0
+   assert $(arraysize backups) -eq 0
 }
 
 
@@ -328,28 +314,28 @@ test_cleanupBackups() {
 
    # Does not do any checking itself. Dumb utility that just removes oldest
    # backup (via getBackups()).
-   assert $(backupsSize) = 0
+   assert $(backupsSize) -eq 0
    makeBackups 2
-   assert $(backupsSize) = 2
+   assert $(backupsSize) -eq 2
    assert cleanupBackups "$destination" "$backupName"
-   assert $(backupsSize) = 1
+   assert $(backupsSize) -eq 1
 
    # Missing backup name: fail.
    assert ! cleanupBackups "$destination"
-   assert $(backupsSize) = 1
+   assert $(backupsSize) -eq 1
 
    # Missing destination: fail.
    assert ! cleanupBackups "" "$backupName"
-   assert $(backupsSize) = 1
+   assert $(backupsSize) -eq 1
 
    # Destination doesn't exist: fail.
    local fake="$directory/fake"
    assert ! cleanupBackups "$fake" "$backupName"
-   assert $(backupsSize) = 1
+   assert $(backupsSize) -eq 1
 
    # No backups to delete.
    assert cleanupBackups "$destination" "$backupName"
-   assert $(backupsSize) = 0
+   assert $(backupsSize) -eq 0
    assert ! cleanupBackups "$destination" "$backupName"
 }
 
@@ -370,22 +356,22 @@ test_backupObject() {
 
    [ -d "$destination" ] && rm -rf "$destination"
 
-   # Object file exists and destination exist: backup.
+   # File object exists and destination exists: backup.
    mkdir "$destination"
    object="$directory/foo.txt"
    backupName="$(getBackupName "$object")"
    assert -d "$destination"
    assert -f "$object"
    assert backupObject "$object" "$destination"
-   assert $(backupsSize) = 1
+   assert $(backupsSize) -eq 1
 
-   # Object directory exists and destination exist: backup.
+   # Directory object exists and destination exists: backup.
    object="$directory/bar"
    backupName="$(getBackupName "$object")"
    assert -d "$destination"
    assert -d "$object"
    assert backupObject "$object" "$destination"
-   assert $(backupsSize) = 1
+   assert $(backupsSize) -eq 1
 
    # Object doesn't exist: fail.
    object="$directory/fake.txt"
@@ -393,7 +379,7 @@ test_backupObject() {
    assert -d "$destination"
    assert ! -e "$object"
    assert ! backupObject "$object" "$destination"
-   assert $(backupsSize) = 0
+   assert $(backupsSize) -eq 0
 
    # Destination doesn't exist: create destination.
    [ -d "$destination" ] && rm -rf "$destination"
@@ -403,7 +389,7 @@ test_backupObject() {
    assert -f "$object"
    assert backupObject "$object" "$destination"
    assert -d "$destination"
-   assert $(backupsSize) = 1
+   assert $(backupsSize) -eq 1
    rm -rf "$destination"/*
 
    # Missing object argument: fail.
@@ -416,11 +402,11 @@ test_backupObject() {
 
 test_backupJob() {
    local directory="$RESOURCES/backup_job"
-   local job backupName destination object
+   local job="$directory/good.backup"
+   local backupName destination object
    local -a backups objects
 
-   # Job exists, objects exist, destination doesn't exist: backup.
-   job="$directory/complete.backup"
+   # Job objects exist, destination doesn't exist: backup.
    destination="$(getDestination "$job")"
    [ -d "$destination" ] && rm -rf "$destination"
    assert -f "$job"
@@ -431,28 +417,27 @@ test_backupJob() {
    for object in "${objects[@]}"; do
       backupName="$(getBackupName "$object")"
       readarray -t backups < <(getBackups "$destination" "$backupName")
-      assert $(arraysize backups) = 1
+      assert $(arraysize backups) -eq 1
+   done
+
+   # Destination already exists: backup.
+   rm -rf "$destination"/*
+   assert backupJob "$job"
+   for object in "${objects[@]}"; do
+      backupName="$(getBackupName "$object")"
+      readarray -t backups < <(getBackups "$destination" "$backupName")
+      assert $(arraysize backups) -eq 1
    done
 
    # Backups already exist: backup.
    assert backupJob "$job"
-   readarray -t objects < <(getObjects "$job")
    for object in "${objects[@]}"; do
       backupName="$(getBackupName "$object")"
       readarray -t backups < <(getBackups "$destination" "$backupName")
-      assert $(arraysize backups) = 1
+      assert $(arraysize backups) -eq 1
    done
 
-   # Job exists, objects missing, destination exists: fail.
-   job="$directory/empty.backup"
-   assert -d "$destination"
-   assert ! backupJob "$job"
-
-   # Job doesn't exist: fail.
-   rm -rf "$destination"/*
-   job="$directory/fake.backup"
-   assert ! -f "$job"
-   assert ! backupJob "$job"
+   [ -d "$destination" ] && rm -rf "$destination"
 }
 
 
@@ -468,20 +453,20 @@ test_readConfig() {
    # Config has invalid variables: ignore and continue.
    config="$directory/has_invalid.conf"
    readConfig "$config"
-   assert "$BACKUPS_LIMIT" = 5
+   assert "$BACKUPS_LIMIT" -eq 5
    assert -z "$invalid"
    BACKUPS_LIMIT=
 
    # Config has whole-line comments: ignore line and continue.
    config="$directory/whole_line_comment.conf"
    readConfig "$config"
-   assert "$BACKUPS_LIMIT" = 5
+   assert "$BACKUPS_LIMIT" -eq 5
    BACKUPS_LIMIT=
 
    # Config has comments after values: ignore comment portion and parse.
    config="$directory/partial_line_comment.conf"
    readConfig "$config"
-   assert "$BACKUPS_LIMIT" = 5
+   assert "$BACKUPS_LIMIT" -eq 5
    BACKUPS_LIMIT=
    assert "$LOG_FILE" = "/log/file.log"
    LOG_FILE=
@@ -491,7 +476,7 @@ test_readConfig() {
    readConfig "$config"
    assert "$BACKUPS_DIR" = "/backups/directory with/double  spaces"
    BACKUPS_DIR=
-   assert "$BACKUPS_LIMIT" = 5
+   assert "$BACKUPS_LIMIT" -eq 5
    BACKUPS_LIMIT=
 
    # Value has spaces with quotes around it.
@@ -499,13 +484,13 @@ test_readConfig() {
    readConfig "$config"
    assert "$BACKUPS_DIR" = "/backups/directory with/double  spaces"
    BACKUPS_DIR=
-   assert "$BACKUPS_LIMIT" = 5
+   assert "$BACKUPS_LIMIT" -eq 5
    BACKUPS_LIMIT=
 
    # Key is listed twice: use the last value.
    config="$directory/duplicate.conf"
    readConfig "$config"
-   assert "$BACKUPS_LIMIT" = 5
+   assert "$BACKUPS_LIMIT" -eq 5
    BACKUPS_LIMIT=
 
    # Config is empty: OK.
@@ -519,7 +504,7 @@ test_readConfig() {
    assert "$JOB_SUFFIX" = ".else"
    assert "$LOG_FILE" = "/log/file.log"
    assert "$BACKUPS_DIR" = "/backups/directory with/double  spaces"
-   assert "$BACKUPS_LIMIT" = 5
+   assert "$BACKUPS_LIMIT" -eq 5
    assert -z "$invalid"
 }
 
@@ -527,7 +512,6 @@ test_readConfig() {
 test_backupsWithinLimit() {
    local directory="$RESOURCES/backups_within_limit"
    local destination="$directory/destination"
-   local BACKUPS_LIMIT=1
    local object="$directory/within_limit.txt"
    local backupName="$(getBackupName "$object")"
 
@@ -564,15 +548,83 @@ test_backupsWithinLimit() {
 
    # Backups are within limit.
    makeBackups 1
-   assert $(backupsSize) = 1
-   assert backupsWithinLimit "$destination" "$backupName"
+   assert $(backupsSize) -eq 1
+   assert backupsWithinLimit 1 "$destination" "$backupName"
 
    # Backups exceed limit.
    makeBackups 1
-   assert $(backupsSize) = 2
-   assert ! backupsWithinLimit "$destination" "$backupName"
+   assert $(backupsSize) -eq 2
+   assert ! backupsWithinLimit 1 "$destination" "$backupName"
 
    # Increase limit.
-   BACKUPS_LIMIT=2
-   assert backupsWithinLimit "$destination" "$backupName"
+   assert backupsWithinLimit 2 "$destination" "$backupName"
 }
+
+
+test_validateJobFile(){
+   local directory="$RESOURCES/validate_job_file"
+   local BACKUPS_DIR="$directory/default"
+   local BACKUPS_LIMIT=1
+   local job
+   
+   # Full file: has a destination, 2 objects, backups_limit, and correct suffix.
+   job="$directory/good.backup"
+   assert validateJobFile "$job"
+
+   # Missing objects: fail.
+   job="$directory/only_destination.backup"
+   assert ! validateJobFile "$job"
+
+   # Missing destination but default is set (BACKUPS_DIR): ok.
+   job="$directory/only_objects.backup"
+   assert validateJobFile "$job"
+
+   # Missing destination and default not set: fail.
+   BACKUPS_DIR=
+   assert ! validateJobFile "$job"
+   BACKUPS_DIR="$directory/default"
+
+   # Missing backups_limit but default is set (BACKUPS_LIMIT): ok.
+   assert validateJobFile "$job"
+
+   # Missing backups_limit and default not set: fail.
+   BACKUPS_LIMIT=
+   assert ! validateJobFile "$job"
+   BACKUPS_LIMIT=1
+
+   # Job suffix is wrong: fail.
+   job="$directory/wrong.suffix"
+   assert ! validateJobFile "$job"
+
+   # Job suffix not set: fail.
+   local JOB_SUFFIX=
+   job="$directory/good.backup"
+   assert ! validateJobFile "$job"
+}
+
+
+test_getBackupsLimit(){
+   local directory="$RESOURCES/get_backups_limit"
+   local BACKUPS_LIMIT=1
+   local job
+
+   # Normal job that contains objects, destination, and backups_limit.
+   job="$directory/good.backup"
+   assert $(getBackupsLimit "$job") -eq 5
+   assert getBackupsLimit "$job"
+
+   # Contains multiple backups_limit: use first.
+   assert $(getBackupsLimit "$job") -eq 5
+   assert getBackupsLimit "$job"
+
+   # Contains no backups_limit: use default.
+   job="$directory/missing_backups_limit.backup"
+   assert $(getBackupsLimit "$job") -eq 1
+   assert getBackupsLimit "$job"
+
+   # Contains no backups_limit and default (BACKUPS_LIMIT) not set: fail.
+   BACKUPS_LIMIT=
+   assert -z $(getBackupsLimit "$job")
+   assert ! getBackupsLimit "$job"
+}
+

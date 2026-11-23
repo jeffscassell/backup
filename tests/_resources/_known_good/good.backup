@@ -1,5 +1,6 @@
-/f/.backup/programming/bash/backup/tests/_resources/_known_good/foo.txt
-/f/.backup/programming/bash/backup/tests/_resources/_known_good/bar
-/f/.backup/programming/bash/backup/tests/_resources/_known_good/baz space.txt
+../_known_good/foo.txt
+../_known_good/bar
+../_known_good/baz space.txt
 
-destination=/f/.backup/programming/bash/backup/tests/_resources/_backup_destination
+destination=./_backup_destination
+backups_limit=5
